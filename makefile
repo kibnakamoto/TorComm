@@ -9,12 +9,14 @@ ${EXEC}: ${TORCOMM}
 
 all: ${TORCOMM}
 	${CXX} ${CXXFLAGS} ${TORCOMM} -o ${EXEC}
-	cd pwnat && ${MAKE} && cd ..
+	cd pwnat && ${MAKE}
+	rm -rf src/destination.o src/list.o src/message.o src/packet.o  src/socket.o src/strlcpy.o src/strlcpy.o src/udpclient.o src/udpserver.o
+	cd ..
 
 setup:
-	cd pwnat && ${MAKE} && cd ..
+	cd pwnat && ${MAKE} && rm -rf src/client.o src/destination.o src/list.o src/message.o src/packet.o  src/socket.o src/strlcpy.o src/strlcpy.o src/udpclient.o src/udpserver.o
 
 clean:
 	rm -rf ${OBJS}
-	cd pwnat && ${MAKE} clean && cd ..
+	cd pwnat && ${MAKE} clean
 
