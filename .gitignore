@@ -31,4 +31,6 @@
 *.out
 *.app
 
+torcomm
+
 pwnat/src/*.o
