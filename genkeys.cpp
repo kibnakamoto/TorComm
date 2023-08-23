@@ -38,6 +38,9 @@ std::string rand_ip_key()
 	
 }
 
+// TODO: before writing to file, make sure to ask user to backup all keys before replacing
+// TODO: make sure to decrypt all IPs and ports before replacing file
+
 int main()
 {
 	std::ofstream file;
@@ -45,7 +48,8 @@ int main()
 	uint16_t port = rand_port_key();
 	Settings settings = Settings();
 	
-	file.open(settings.keys, std::ios_base::app);
+	file.open(settings.keys, std::ios_base::out);
+	file << port << "." << ip_key;
 
 	return 0;
 }
