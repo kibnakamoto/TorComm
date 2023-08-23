@@ -12,12 +12,20 @@ class Settings
 	public:
 	std::string keys;
 	bool save;
+	bool tor;
 	Json::Value setting;
 
 	Settings()
 	{
+		update();
+	}
+
+	void update()
+	{
 		std::fstream settings("settings.json");
 		settings >> setting;
-		std::cout << "\n" << setting["save"] << "\n";
+		save = setting["save"].asBool();
+		tor = setting["tor"].asBool();
+		keys = setting["keys"].asString(); // private keys path
 	}
 };
