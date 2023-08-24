@@ -1,3 +1,5 @@
+#ifndef SETTINGS_H
+#define SETTINGS_H
 #include <fstream>
 #include <jsoncpp/json/json.h>
 
@@ -7,6 +9,7 @@
 #define PORT_KEY 16
 #define  IP_KEY 32
 
+// parse settings.json
 class Settings
 {
 	public:
@@ -29,3 +32,8 @@ class Settings
 		keys = setting["keys"].asString(); // private keys path
 	}
 };
+
+// define global settings so it can be accesssed without creating a new object everytime, only create objects when modyfing settings
+Settings global_settings = Settings();
+
+#endif /* SETTINGS_H */
