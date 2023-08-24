@@ -4,7 +4,7 @@ OPENSSL_FLAGS= -lssl -lcrypto
 JSON_FLAGS= -ljsoncpp
 EXEC ?= torcomm
 TORCOMM ?= torcomm.cpp
-GENKEY = genkeys.cpp
+GENKEY = keys.cpp
 GENKEY_EXEC = genkeys
 OBJS=n
 
