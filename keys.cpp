@@ -1,4 +1,3 @@
-#include <cryptopp/config_int.h>
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -8,16 +7,11 @@
 #include "keys.h"
 #include "settings.h"
 
+#include <cryptopp/config_int.h>
 #include <cryptopp/chacha.h>
 #include <cryptopp/osrng.h>
 
-// 1. Generate keys for encrypting ports and IPs
-//
-// FORMAT:
-// hex key
-// e.g.
-// ff.3e.4a.6b.45...
-//
+// Generate keys, and IVs for encrypting ports and IPs in configure.json in all sessions
 // encrypt using ChaCha20 because it is a stream cipher, encrypt port and ip using private key
 
 
@@ -183,6 +177,7 @@ class Configure
 		}
 
 		// generate 6 new IVs for encrypting config members
+		// IVs are a nonce so save them in config and only use them once
 		void new_ivs()
 		{
 			CryptoPP::AutoSeededRandomPool rng;
@@ -201,110 +196,124 @@ class Configure
 			config["IV"]["PUBLIC B"] = to_hex_str(IVs[PUBLIC_B], CryptoPP::ChaCha::IV_LENGTH);
 			config["IV"]["PRIVATE B"] = to_hex_str(IVs[PRIVATE_B], CryptoPP::ChaCha::IV_LENGTH);
 		}
+
+		// decrypt all
+		void decrypt(std::string keys_path=global_settings.keys)
+		{
+			process(keys_path);
+		}
+
+		void encrypt(std::string keys_path=global_settings.keys)
+		{
+			process(keys_path);
+			write_to_file(); // if encrypt, write to file
+		}
+
+	protected:
+
+		// encrypt/decrypt configure.json values in every session
+		// config_path: the path of configure.json
+		// keys_path: path of keys.txt
+		// return config, call config.write_to_file() to save values
+		void process(std::string keys_path=global_settings.keys)
+		{
+			uint8_t *key = new uint8_t[32];
+			get_port_ip_key(key, keys_path); // assign key from file to array
+		
+			// encrypt all values in configure
+			CryptoPP::ChaCha::Encryption chacha;
+			
+		
+			// encrypt port
+			uint8_t *str_port = new uint8_t[2];
+			uint8_t port_len;
+		
+			 // convert port to bytearray
+			if (port > 0xff) {
+				str_port[0] = (uint8_t)(port >> 8);
+				str_port[1] = (uint8_t)port;
+				port_len = 2;
+			} else {
+				*str_port = (uint8_t)port;
+				port_len = 1;
+			}
+			// encrypt port
+			uint8_t *ct = new uint8_t[port_len];
+			chacha.SetKeyWithIV(key, 32, IVs[PORT]); // 256-bit chacha20 encryption key
+			chacha.ProcessData(ct, (const CryptoPP::byte *)str_port, port_len);
+			port = ((uint16_t)ct[0] << 8) | ct[1];
+			
+			// encrypt/decrypt tor port
+		
+			 // convert tor port to bytearray
+			if (tor_port > 0xff) {
+				str_port[0] = (uint8_t)(tor_port >> 8);
+				str_port[1] = (uint8_t)tor_port;
+				port_len = 2;
+			} else {
+				*str_port = (uint8_t)tor_port;
+				port_len = 1;
+			}
+			delete[] ct;
+			ct = new uint8_t[port_len];
+		
+		
+			chacha.SetKeyWithIV(key, 32, IVs[TOR_PORT]); // 256-bit chacha20 encryption key
+			chacha.ProcessData(ct, (const CryptoPP::byte *)str_port, port_len);
+			tor_port = ((uint16_t)ct[0] << 8) | ct[1];
+			delete[] str_port;
+			delete[] ct;
+		
+			// encrypt/decrypt public ip, all IPs are encrypted byte by byte. the dots aren't encrypted
+			ct = new uint8_t[4];
+			uint8_t *ip = new uint8_t[4];
+			parse_ip(ip, public_ip);
+			chacha.SetKeyWithIV(key, 32, IVs[PUBLIC]); // 256-bit chacha20 encryption key
+			chacha.ProcessData(&ct[0], &ip[0], 1);
+			chacha.ProcessData(&ct[1], &ip[1], 1);
+			chacha.ProcessData(&ct[2], &ip[2], 1);
+			chacha.ProcessData(&ct[3], &ip[3], 1);
+			public_ip = std::to_string(ct[0]+0) + "." + std::to_string(ct[1]+0) + "." + std::to_string(ct[2]+0) + "." + std::to_string(ct[3]+0);
+		
+			// encrypt/decrypt private ip
+			parse_ip(ip, private_ip);
+			chacha.SetKeyWithIV(key, 32, IVs[PRIVATE]); // 256-bit chacha20 encryption key
+			chacha.ProcessData(&ct[0], &ip[0], 1);
+			chacha.ProcessData(&ct[1], &ip[1], 1);
+			chacha.ProcessData(&ct[2], &ip[2], 1);
+			chacha.ProcessData(&ct[3], &ip[3], 1);
+			private_ip = std::to_string(ct[0]+0) + "." + std::to_string(ct[1]+0) + "." + std::to_string(ct[2]+0) + "." + std::to_string(ct[3]+0);
+		
+			// on other device,
+		
+			// encrypt/decrypt public ip B (other device)
+			parse_ip(ip, public_b_ip);
+			chacha.SetKeyWithIV(key, 32, IVs[PUBLIC_B]); // 256-bit chacha20 encryption key
+			chacha.ProcessData(&ct[0], &ip[0], 1);
+			chacha.ProcessData(&ct[1], &ip[1], 1);
+			chacha.ProcessData(&ct[2], &ip[2], 1);
+			chacha.ProcessData(&ct[3], &ip[3], 1);
+			public_b_ip = std::to_string(ct[0]+0) + "." + std::to_string(ct[1]+0) + "." + std::to_string(ct[2]+0) + "." + std::to_string(ct[3]+0);
+		
+			// encrypt/decrypt private ip B (other device)
+			parse_ip(ip, private_b_ip);
+			chacha.SetKeyWithIV(key, 32, IVs[PRIVATE_B]); // 256-bit chacha20 encryption key
+			chacha.ProcessData(&ct[0], &ip[0], 1);
+			chacha.ProcessData(&ct[1], &ip[1], 1);
+			chacha.ProcessData(&ct[2], &ip[2], 1);
+			chacha.ProcessData(&ct[3], &ip[3], 1);
+			private_b_ip = std::to_string(ct[0]+0) + "." + std::to_string(ct[1]+0) + "." + std::to_string(ct[2]+0) + "." + std::to_string(ct[3]+0);
+			
+			write_values();
+			delete[] key;
+			delete[] ct;
+		}
 };
-
-// encrypt/decrypt configure.json values in every session
-// config_path: the path of configure.json
-// keys_path: path of keys.txt
-void cipher_config(std::string config_path, std::string keys_path=global_settings.keys)
-{
-	uint8_t *key = new uint8_t[32];
-	get_port_ip_key(key, keys_path); // assign key from file to array
-
-	// encrypt all values in configure
-	Configure config = Configure(config_path);
-	CryptoPP::ChaCha::Encryption chacha;
-	
-
-	// encrypt port
-	uint8_t *str_port = new uint8_t[2];
-	uint8_t port_len;
-
-	 // convert port to bytearray
-	if (config.port > 0xff) {
-		str_port[0] = (uint8_t)(config.port >> 8);
-		str_port[1] = (uint8_t)config.port;
-		port_len = 2;
-	} else {
-		*str_port = (uint8_t)config.port;
-		port_len = 1;
-	}
-	// encrypt port
-	uint8_t *ct = new uint8_t[port_len];
-	chacha.SetKeyWithIV(key, 32, config.IVs[config.PORT]); // 256-bit chacha20 encryption key
-	chacha.ProcessData(ct, (const CryptoPP::byte *)str_port, port_len);
-	config.port = ((uint16_t)ct[0] << 8) | ct[1];
-	
-	// encrypt/decrypt tor port
-
-	 // convert tor port to bytearray
-	if (config.tor_port > 0xff) {
-		str_port[0] = (uint8_t)(config.tor_port >> 8);
-		str_port[1] = (uint8_t)config.tor_port;
-		port_len = 2;
-	} else {
-		*str_port = (uint8_t)config.tor_port;
-		port_len = 1;
-	}
-	delete[] ct;
-	ct = new uint8_t[port_len];
-
-
-	chacha.SetKeyWithIV(key, 32, config.IVs[config.TOR_PORT]); // 256-bit chacha20 encryption key
-	chacha.ProcessData(ct, (const CryptoPP::byte *)str_port, port_len);
-	config.tor_port = ((uint16_t)ct[0] << 8) | ct[1];
-	delete[] str_port;
-	delete[] ct;
-
-	// encrypt/decrypt public ip, all IPs are encrypted byte by byte. the dots aren't encrypted
-	ct = new uint8_t[4];
-	uint8_t *ip = new uint8_t[4];
-	parse_ip(ip, config.public_ip);
-	chacha.SetKeyWithIV(key, 32, config.IVs[config.PUBLIC]); // 256-bit chacha20 encryption key
-	chacha.ProcessData(&ct[0], &ip[0], 1);
-	chacha.ProcessData(&ct[1], &ip[1], 1);
-	chacha.ProcessData(&ct[2], &ip[2], 1);
-	chacha.ProcessData(&ct[3], &ip[3], 1);
-	config.public_ip = std::to_string(ct[0]+0) + "." + std::to_string(ct[1]+0) + "." + std::to_string(ct[2]+0) + "." + std::to_string(ct[3]+0);
-
-	// encrypt/decrypt private ip
-	parse_ip(ip, config.private_ip);
-	chacha.SetKeyWithIV(key, 32, config.IVs[config.PRIVATE]); // 256-bit chacha20 encryption key
-	chacha.ProcessData(&ct[0], &ip[0], 1);
-	chacha.ProcessData(&ct[1], &ip[1], 1);
-	chacha.ProcessData(&ct[2], &ip[2], 1);
-	chacha.ProcessData(&ct[3], &ip[3], 1);
-	config.private_ip = std::to_string(ct[0]+0) + "." + std::to_string(ct[1]+0) + "." + std::to_string(ct[2]+0) + "." + std::to_string(ct[3]+0);
-
-	// on other device,
-
-	// encrypt/decrypt public ip B (other device)
-	parse_ip(ip, config.public_b_ip);
-	chacha.SetKeyWithIV(key, 32, config.IVs[config.PUBLIC_B]); // 256-bit chacha20 encryption key
-	chacha.ProcessData(&ct[0], &ip[0], 1);
-	chacha.ProcessData(&ct[1], &ip[1], 1);
-	chacha.ProcessData(&ct[2], &ip[2], 1);
-	chacha.ProcessData(&ct[3], &ip[3], 1);
-	config.public_b_ip = std::to_string(ct[0]+0) + "." + std::to_string(ct[1]+0) + "." + std::to_string(ct[2]+0) + "." + std::to_string(ct[3]+0);
-
-	// encrypt/decrypt private ip B (other device)
-	parse_ip(ip, config.private_b_ip);
-	chacha.SetKeyWithIV(key, 32, config.IVs[config.PRIVATE_B]); // 256-bit chacha20 encryption key
-	chacha.ProcessData(&ct[0], &ip[0], 1);
-	chacha.ProcessData(&ct[1], &ip[1], 1);
-	chacha.ProcessData(&ct[2], &ip[2], 1);
-	chacha.ProcessData(&ct[3], &ip[3], 1);
-	config.private_b_ip = std::to_string(ct[0]+0) + "." + std::to_string(ct[1]+0) + "." + std::to_string(ct[2]+0) + "." + std::to_string(ct[3]+0);
-	
-	config.write_values();
-	config.write_to_file();
-	delete[] key;
-	delete[] ct;
-}
 
 int main()
 {
-	cipher_config("./configure.json");
+	Configure config = Configure("./configure.json");
+	config.encrypt();
 	std::cout << std::endl;
 	return 0;
 }
