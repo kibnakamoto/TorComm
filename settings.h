@@ -20,10 +20,10 @@ class Settings
 
 	Settings()
 	{
-		update();
+		get_values();
 	}
 
-	void update()
+	void get_values()
 	{
 		std::fstream settings("settings.json");
 		settings >> setting;
