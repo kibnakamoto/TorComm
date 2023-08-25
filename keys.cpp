@@ -15,10 +15,10 @@
 // encrypt using ChaCha20 because it is a stream cipher, encrypt port and ip using private key
 
 
-// TODO: before writing to file, make sure to ask user to backup all keys before replacing
-// TODO: make sure to decrypt all IPs and ports before replacing file
 
-// generate new key in keys.txt file
+// Before writing to file, make sure to ask user to backup all keys before replacing
+// Make sure to decrypt all IPs and ports before replacing file
+// Generate new key in keys.txt file
 void new_port_ip_key(Settings settings=global_settings)
 {
 	std::ofstream file;
@@ -104,7 +104,7 @@ class Configure
 		Json::Value config;
 		std::string config_path;
 		uint8_t **IVs = new uint8_t*[6]; // IVs for all ips and ports in configuration.json
-		enum IV {PORT, TOR_PORT, PUBLIC, PRIVATE, PUBLIC_B, PRIVATE_B}; // indexing of iv
+		enum IV {PORT, TOR_PORT, PUBLIC, PRIVATE, PUBLIC_1, PRIVATE_1}; // indexing of iv
 
 		Configure(std::string configpath)
 		{
@@ -130,16 +130,16 @@ class Configure
 			tor_port = config["TOR PORT"].asUInt();
 			public_ip = config["PUBLIC"].asString();
 			private_ip = config["PRIVATE"].asString();
-			public_b_ip = config["PUBLIC B"].asString();
-			private_b_ip = config["PRIVATE B"].asString();
+			public_b_ip = config["PUBLIC 1"].asString();
+			private_b_ip = config["PRIVATE 1"].asString();
 			
 			// get IVs
 			hex_str_to(config["IV"]["PORT"].asString(), IVs[PORT]);
 			hex_str_to(config["IV"]["TOR PORT"].asString(), IVs[TOR_PORT]);
 			hex_str_to(config["IV"]["PUBLIC"].asString(), IVs[PUBLIC]);
 			hex_str_to(config["IV"]["PRIVATE"].asString(), IVs[PRIVATE]);
-			hex_str_to(config["IV"]["PUBLIC B"].asString(), IVs[PUBLIC_B]);
-			hex_str_to(config["IV"]["PRIVATE B"].asString(), IVs[PRIVATE_B]);
+			hex_str_to(config["IV"]["PUBLIC 1"].asString(), IVs[PUBLIC_1]);
+			hex_str_to(config["IV"]["PRIVATE 1"].asString(), IVs[PRIVATE_1]);
 		}
 
 		// reset config to file
@@ -156,16 +156,16 @@ class Configure
 			config["TOR PORT"]  = tor_port;
 			config["PUBLIC"]    = public_ip;
 			config["PRIVATE"]   = private_ip;
-			config["PUBLIC B"]  = public_b_ip;
-			config["PRIVATE B"] = private_b_ip;
+			config["PUBLIC 1"]  = public_b_ip;
+			config["PRIVATE 1"] = private_b_ip;
 
 			// IVs
 			config["IV"]["PORT"] = to_hex_str(IVs[PORT], CryptoPP::ChaCha::IV_LENGTH);
 			config["IV"]["TOR PORT"] = to_hex_str(IVs[TOR_PORT], CryptoPP::ChaCha::IV_LENGTH);
 			config["IV"]["PUBLIC"] = to_hex_str(IVs[PUBLIC], CryptoPP::ChaCha::IV_LENGTH);
 			config["IV"]["PRIVATE"] = to_hex_str(IVs[PRIVATE], CryptoPP::ChaCha::IV_LENGTH);
-			config["IV"]["PUBLIC B"] = to_hex_str(IVs[PUBLIC_B], CryptoPP::ChaCha::IV_LENGTH);
-			config["IV"]["PRIVATE B"] = to_hex_str(IVs[PRIVATE_B], CryptoPP::ChaCha::IV_LENGTH);
+			config["IV"]["PUBLIC 1"] = to_hex_str(IVs[PUBLIC_1], CryptoPP::ChaCha::IV_LENGTH);
+			config["IV"]["PRIVATE 1"] = to_hex_str(IVs[PRIVATE_1], CryptoPP::ChaCha::IV_LENGTH);
 		}
 
 		// call write_values() to assign object members to config then call this function to write to file
@@ -185,16 +185,16 @@ class Configure
 			rng.GenerateBlock((IVs[TOR_PORT]), CryptoPP::ChaCha::IV_LENGTH); // generate tor port IV
 			rng.GenerateBlock((IVs[PUBLIC]), CryptoPP::ChaCha::IV_LENGTH); // generate public ip IV
 			rng.GenerateBlock((IVs[PRIVATE]), CryptoPP::ChaCha::IV_LENGTH); // generate private ip IV
-			rng.GenerateBlock((IVs[PUBLIC_B]), CryptoPP::ChaCha::IV_LENGTH); // generate public ip B IV
-			rng.GenerateBlock((IVs[PRIVATE_B]), CryptoPP::ChaCha::IV_LENGTH); // generate private ip B IV
+			rng.GenerateBlock((IVs[PUBLIC_1]), CryptoPP::ChaCha::IV_LENGTH); // generate public ip 1 IV
+			rng.GenerateBlock((IVs[PRIVATE_1]), CryptoPP::ChaCha::IV_LENGTH); // generate private ip 1 IV
 			
 			// set config
 			config["IV"]["PORT IV"] = to_hex_str(IVs[PORT], CryptoPP::ChaCha::IV_LENGTH);
 			config["IV"]["TOR PORT"] = to_hex_str(IVs[TOR_PORT], CryptoPP::ChaCha::IV_LENGTH);
 			config["IV"]["PUBLIC"] = to_hex_str(IVs[PUBLIC], CryptoPP::ChaCha::IV_LENGTH);
 			config["IV"]["PRIVATE"] = to_hex_str(IVs[PRIVATE], CryptoPP::ChaCha::IV_LENGTH);
-			config["IV"]["PUBLIC B"] = to_hex_str(IVs[PUBLIC_B], CryptoPP::ChaCha::IV_LENGTH);
-			config["IV"]["PRIVATE B"] = to_hex_str(IVs[PRIVATE_B], CryptoPP::ChaCha::IV_LENGTH);
+			config["IV"]["PUBLIC 1"] = to_hex_str(IVs[PUBLIC_1], CryptoPP::ChaCha::IV_LENGTH);
+			config["IV"]["PRIVATE 1"] = to_hex_str(IVs[PRIVATE_1], CryptoPP::ChaCha::IV_LENGTH);
 		}
 
 		// decrypt all
@@ -286,18 +286,18 @@ class Configure
 		
 			// on other device,
 		
-			// encrypt/decrypt public ip B (other device)
+			// encrypt/decrypt public ip 1 (other device)
 			parse_ip(ip, public_b_ip);
-			chacha.SetKeyWithIV(key, 32, IVs[PUBLIC_B]); // 256-bit chacha20 encryption key
+			chacha.SetKeyWithIV(key, 32, IVs[PUBLIC_1]); // 256-bit chacha20 encryption key
 			chacha.ProcessData(&ct[0], &ip[0], 1);
 			chacha.ProcessData(&ct[1], &ip[1], 1);
 			chacha.ProcessData(&ct[2], &ip[2], 1);
 			chacha.ProcessData(&ct[3], &ip[3], 1);
 			public_b_ip = std::to_string(ct[0]+0) + "." + std::to_string(ct[1]+0) + "." + std::to_string(ct[2]+0) + "." + std::to_string(ct[3]+0);
 		
-			// encrypt/decrypt private ip B (other device)
+			// encrypt/decrypt private ip 1 (other device)
 			parse_ip(ip, private_b_ip);
-			chacha.SetKeyWithIV(key, 32, IVs[PRIVATE_B]); // 256-bit chacha20 encryption key
+			chacha.SetKeyWithIV(key, 32, IVs[PRIVATE_1]); // 256-bit chacha20 encryption key
 			chacha.ProcessData(&ct[0], &ip[0], 1);
 			chacha.ProcessData(&ct[1], &ip[1], 1);
 			chacha.ProcessData(&ct[2], &ip[2], 1);
@@ -309,6 +309,8 @@ class Configure
 			delete[] ct;
 		}
 };
+
+// TODO: add groupchat system, to do so, make public_1 and private_1 be an iteration from 1 to amount of other people+1
 
 int main()
 {
