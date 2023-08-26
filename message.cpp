@@ -9,7 +9,7 @@ class Message
 		std::string timestamp; // time of message
 		std::string msg; // plaintext message to send or receive
 		Json::Value messages;
-		enum format {TEXT, IMAGE, VIDEO, OTHER}; // currently only text
+		enum format {TEXT, IMAGE, VIDEO, _FILE_, DELETE};
 
 		// message and time
 		Message(std::string message, std::string tm)
