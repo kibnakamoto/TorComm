@@ -5,10 +5,6 @@
 
 #include <iostream>
 
-// port or ip key
-#define PORT_KEY 16
-#define  IP_KEY 32
-
 // parse settings.json
 class Settings
 {
