@@ -6,7 +6,6 @@
 		"private key": "54390893058834085340989058340126...",
 		"public key 1": "70695870658750234018323049328442...",
 
-		// text sending
 		"sent 0":
 		{
 			"type": 0,
@@ -14,40 +13,11 @@
 			"timestamp": "time"
 		},
 
-		// images/video/file receiving
 		"received 0":
 		{
-			"type": 1,
-			"count": "2",
-			"timestamp": "time",
-			"optional msg": true,
-
-			"file 0":
-			{
-				"name": "image.png",
-				"size": "2048",
-
-				"packet 0":
-				{
-					"msg": "image 1024"
-				},
-				"packet 1":
-				{
-					"msg": "image 1024-2048"
-				}
-			},
-
-			"file 1":
-			{
-				"name": "image1.png",
-				"size": "1024",
-
-				"packet 0":
-				{
-					"msg": "image 1024"
-				}
-			},
-			"msg": "check this image"
+			"type": 0,
+			"msg": "hi",
+			"timestamp": "time"
 		}
 	},
 
