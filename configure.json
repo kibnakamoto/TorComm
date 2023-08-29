@@ -3,16 +3,12 @@
 	{
 		"PORT" : "3d1efa37d2af52f8",
 		"PORT IV" : "3d1efa37d2af52f8",
-		"PRIVATE" : "f7b7cb6c305bf8c2",
-		"PRIVATE 1" : "b1e7a79b7e0b7cfc",
 		"PUBLIC" : "d94b66a5b62e67c0",
-		"PUBLIC 1" : "cb603866d049a106",
+		"1" : "cb603866d049a106",
 		"TOR PORT" : "d6dfa247fd4f5dc4"
 	},
 	"PORT" : 8000,
-	"PRIVATE" : "0.0.0.0",
-	"PRIVATE 1" : "0.0.0.0",
-	"PUBLIC" : "0.0.0.0",
-	"PUBLIC 1" : "0.0.0.0",
-	"TOR PORT" : 9500
+	"PUBLIC" : "0000:0000:0000:0000:0000:0000:0000:0000",
+	"1" : "0000:0000:0000:0000:0000:0000:0000:0000",
+	"TOR PORT" : 9005
 }
