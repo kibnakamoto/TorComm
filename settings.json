@@ -1,7 +1,7 @@
 {
-	"setting rules such as save: on": "",
 	"save": 1,
 	"tor": 1,
-	"keys": "/home/kibnakamoto/workspace/TorComm/keys.txt"
+	"keys": "/home/kibnakamoto/workspace/TorComm/keys.txt",
+	"packet": 1024
 
 }
