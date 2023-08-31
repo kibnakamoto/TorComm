@@ -6,17 +6,9 @@
 #include <iostream>
 
 // recreate settings.json file if it is broken or doesn't exist
-void init_settings_json(std::string keys_path, std::string settings_path="./settings.json")
-{
-	std::ofstream file;
-	Json::Value setting;
-	setting["save"] = 1;
-	setting["tor"] = 1;
-	setting["keys"] = keys_path;
-	setting["packet_size"] = 1024;
-	file.open(settings_path, std::ios_base::out | std::ofstream::trunc);
-	file << setting;
-}
+void init_settings_json(std::string keys_path, std::string settings_path="./settings.json");
+
+// parse settings.json
 
 // parse settings.json
 class Settings
@@ -69,10 +61,5 @@ class Settings
 		
 	}
 };
-
-// define global settings so it can be accesssed without creating a new object everytime, only create objects when modyfing settings
-Settings global_settings; // TODO: don't initialize here, initialize with exception handling in torcomm.cpp, if error: call init_settings.json
-
-uint32_t global_packet_size = global_settings.packet_size; // FOLLOW previous TODO
-
 #endif /* SETTINGS_H */
+

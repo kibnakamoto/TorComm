@@ -25,7 +25,7 @@
 // Before writing to file, make sure to ask user to backup all keys before replacing
 // Make sure to decrypt all IPs and ports before replacing file
 // Generate new key in keys.txt file
-void new_port_ip_key(Settings settings=global_settings)
+void new_port_ip_key(Settings settings)
 {
 	std::ofstream file;
     CryptoPP::AutoSeededRandomPool rng;
@@ -42,12 +42,12 @@ void new_port_ip_key(Settings settings=global_settings)
 }
 
 // read key from keys.txt file
-void get_port_ip_key(uint8_t *key, std::string keys_path=global_settings.keys)
+void get_port_ip_key(uint8_t *key, std::string keys_path)
 {
 	std::ifstream keys_file(keys_path);
 	std::string keys;
 	std::getline(keys_file, keys);
-	size_t keys_dot = keys_dot = keys.find('.');
+	size_t keys_dot;
 	
 	uint8_t i=0;
 	while ((keys_dot = keys.find('.')) != std::string::npos)
@@ -115,7 +115,6 @@ static size_t write_call_back(void *contents, size_t size, size_t nmemb, void *u
 std::string get_ipv6()
 {
 	 CURL *curl;
-   CURLcode res;
    std::string ret;
 
    curl = curl_easy_init();
@@ -123,7 +122,7 @@ std::string get_ipv6()
      curl_easy_setopt(curl, CURLOPT_URL, "https://myexternalip.com/raw");
      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_call_back);
 	 curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ret);
-     res = curl_easy_perform(curl);
+	 curl_easy_perform(curl);
     curl_easy_cleanup(curl);
    }
    return ret;
@@ -274,12 +273,12 @@ class Configure
 		}
 
 		// decrypt all
-		void decrypt(std::string keys_path=global_settings.keys)
+		void decrypt(std::string keys_path)
 		{
 			process(keys_path);
 		}
 
-		void encrypt(std::string keys_path=global_settings.keys)
+		void encrypt(std::string keys_path)
 		{
 			process(keys_path);
 			write_to_file(); // if encrypt, write to file
@@ -291,7 +290,7 @@ class Configure
 		// config_path: the path of configure.json
 		// keys_path: path of keys.txt
 		// return config, call config.write_to_file() to save values
-		void process(std::string keys_path=global_settings.keys)
+		void process(std::string keys_path)
 		{
 			uint8_t *key = new uint8_t[32];
 			get_port_ip_key(key, keys_path); // assign key from file to array
@@ -384,10 +383,22 @@ class Configure
 		}
 };
 
-int main()
-{
-	//init_configure_json("./configure.json");
-	Configure config = Configure("./configure.json");
-	config.encrypt();
-	return 0;
-}
+// For testing keys
+// int main()
+// {
+// 	try {
+// 		global_settings = Settings();
+// 		global_settings.get_values();
+// 		global_packet_size = global_settings.packet_size;
+// 	} catch(Json::RuntimeError &e)
+// 	{
+// 		init_settings_json("./keys.txt");
+// 		global_settings = Settings();
+// 		global_settings.get_values();
+// 		global_packet_size = global_settings.packet_size;
+// 	}
+// 	//init_configure_json("./configure.json");
+// 	Configure config = Configure("./configure.json");
+// 	config.encrypt();
+// 	return 0;
+// }
