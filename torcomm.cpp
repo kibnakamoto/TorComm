@@ -19,7 +19,6 @@ int main()
 		// TODO: implement GUI
 	}
 
-
 	try {
 		settings = Settings();
 		settings.get_values();

@@ -1,24 +1,37 @@
 CXX = g++
-CXX_FLAGS = -g -std=c++20 -Wall -pedantic -Wextra -O4
+CXXFLAGS = -std=c++20 -Wall -pedantic -Wextra -O4
 CRYPTOPP_FLAGS =   -Iinclude -Llib -lcryptopp -lpthread
 JSON_FLAGS = -ljsoncpp
 CURL_FLAGS = -lcurl
-EXEC ?= torcomm
-TORCOMM ?= torcomm.cpp
-GENKEY = keys.cpp
-GENKEY_EXEC = genkeys
-HEADERS = settings.h keys.h
+BOOST_FLAGS = -lboost_filesystem
+FLAGS = ${BOOST_FLAGS} ${CRYPTOPP_FLAGS} ${JSON_FLAGS} ${CURL_FLAGS}
+EXEC = torcomm
+HEADERS = settings.h keys.h settings.h
+CPPS = torcomm.cpp keys.cpp settings.cpp
+OBJS = torcomm.o keys.o settings.o
 
-${EXEC}: ${TORCOMM} ${HEADERS}
-	${CXX} ${CXXFLAGS} ${TORCOMM} -o ${EXEC} ${JSON_FLAGS}
+all: ${OBJS}
+	${CXX} ${CXXFLAGS} ${OBJS} -o ${EXEC} ${FLAGS}
+	
+%.o: %.cpp
+	${CXX} ${CXXFLAGS} $< -c ${FLAGS}
 
-${GENKEY_EXEC}: ${GENKEY} ${HEADERS}
-	${CXX} ${CXXFLAGS} ${GENKEY} ${JSON_FLAGS} -o ${GENKEY_EXEC} ${CRYPTOPP_FLAGS} ${JSON_FLAGS} ${CURL_FLAGS}
 
-all: ${TORCOMM} ${HEADERS}
-	${CXX} ${CXXFLAGS} ${TORCOMM} -o ${EXEC} ${JSON_FLAGS}
-	${CXX} ${CXXFLAGS} ${GENKEY} -o ${GENKEY_EXEC} ${CRYPTOPP_FLAGS} ${JSON_FLAGS} ${CURL_FLAGS}
 
+#${EXEC}: ${CPPS} ${HEADERS} ${OBJS}
+#	${MAKE} all
+#
+#all: ${CPPS} ${HEADERS} ${OBJS}
+#	${CXX} ${CXXFLAGS} settings.cpp -c ${CRYPTOPP_FLAGS} ${JSON_FLAGS} ${CURL_FLAGS}
+#	${CXX} ${CXXFLAGS} keys.cpp     -c ${CRYPTOPP_FLAGS} ${JSON_FLAGS} ${CURL_FLAGS}
+#	${CXX} ${CXXFLAGS} torcomm.cpp  -c ${JSON_FLAGS} ${BOOST_FLAGS}
+#	${CXX} ${CXXFLAGS} ${OBJS} -o ${EXEC} ${FLAGS}
+
+# debug mode
+debug: ${CPPS} ${HEADERS}
+	CXXFLAGS = -std=c++20 -Wall -pedantic -Wextra -O4 -g # added -g
+	${MAKE} all
+
+.PHONY: clean
 clean:
-	rm -rf ${OBJS}
-
+	rm -rf ${EXEC} ${OBJS}
