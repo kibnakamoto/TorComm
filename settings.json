@@ -1,7 +1,8 @@
 {
-	"save": 1,
-	"tor": 1,
-	"keys": "/home/kibnakamoto/workspace/TorComm/keys.txt",
-	"packet": 1024
-
+	"keys" : "./keys.txt",
+	"packet_size" : 1024,
+	"save" : 1,
+	"tor" : 1,
+	"GUI": {
+	}
 }
