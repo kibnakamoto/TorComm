@@ -13,10 +13,8 @@ OBJS = torcomm.o keys.o settings.o
 all: ${OBJS}
 	${CXX} ${CXXFLAGS} ${OBJS} -o ${EXEC} ${FLAGS}
 	
-%.o: %.cpp
+%.o: %.cpp %.h
 	${CXX} ${CXXFLAGS} $< -c ${FLAGS}
-
-
 
 #${EXEC}: ${CPPS} ${HEADERS} ${OBJS}
 #	${MAKE} all
@@ -28,9 +26,8 @@ all: ${OBJS}
 #	${CXX} ${CXXFLAGS} ${OBJS} -o ${EXEC} ${FLAGS}
 
 # debug mode
-debug: ${CPPS} ${HEADERS}
-	CXXFLAGS = -std=c++20 -Wall -pedantic -Wextra -O4 -g # added -g
-	${MAKE} all
+debug: ${OBJS}
+	${CXX} ${CXXFLAGS} -g ${OBJS} -o ${EXEC} ${FLAGS}
 
 .PHONY: clean
 clean:
