@@ -14,21 +14,20 @@ int main()
 	std::string keys_filename = "keys.txt";
 	std::string current_path = boost::filesystem::current_path().string();
 	std::string keys_path = current_path + "/" + keys_filename;
+	Settings settings;
 	if(!boost::filesystem::exists(keys_path)) { // if keys.txt exists
 		// TODO: implement GUI
 	}
 
 
 	try {
-		global_settings = Settings();
-		global_settings.get_values();
-		global_packet_size = global_settings.packet_size;
+		settings = Settings();
+		settings.get_values();
 	} catch(Json::RuntimeError &e)
 	{
-		init_settings_json("./keys.txt");
-		global_settings = Settings();
-		global_settings.get_values();
-		global_packet_size = global_settings.packet_size;
+		init_settings_json(keys_path);
+		settings = Settings();
+		settings.get_values();
 	}
 	std::cout << std::endl;
 	return 0;
