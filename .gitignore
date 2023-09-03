@@ -30,9 +30,4 @@
 *.exe
 *.out
 *.app
-
 torcomm
-keys
-
-
-pwnat/src/*.o

@@ -128,15 +128,238 @@ std::string get_ipv6()
    return ret;
 }
 
+// parse configure.json in sessions, modify config for updating values
+Configure::Configure(std::string configpath)
+{
+	config_path = configpath;
+	std::fstream file(config_path);
+	file >> config;
+	node_count = get_node_count();
+
+	IVs = new uint8_t*[node_count+4];
+	for(uint8_t i=0;i<node_count+4;i++) IVs[i] = new uint8_t[CryptoPP::ChaCha::IV_LENGTH];
+	other_public_ips = new std::string[node_count];
+	get_values();
+}
+
+// set config, this is the default thing to use to make sure to NOT write to file unless Json::Value is encrypted
+Configure::Configure(std::string configpath, Json::Value _config)
+{
+	config_path = configpath;
+	config = _config;
+	std::fstream file(config_path);
+	file >> config;
+	node_count = get_node_count();
+
+	IVs = new uint8_t*[node_count+4];
+	for(uint8_t i=0;i<node_count+4;i++) IVs[i] = new uint8_t[CryptoPP::ChaCha::IV_LENGTH];
+	other_public_ips = new std::string[node_count];
+	get_values();
+}
+
+uint32_t Configure::get_node_count()
+{
+	uint32_t i=0;
+	while (config.isMember(std::to_string(i))) i++;
+	return i;
+}
+
+// destructor
+Configure::~Configure()
+{
+	for(uint8_t i=0;i<node_count+4;i++) delete[] IVs[i];
+	delete[] IVs;
+	delete[] other_public_ips;
+}
+
+void Configure::get_values()
+{
+	//std::cout << std::endl << to_hex_str(*IVs, CryptoPP::ChaCha::IV_LENGTH) << std::endl;
+	port = config["PORT"].asUInt();
+	tor_port = config["TOR PORT"].asUInt();
+	public_ip = config["PUBLIC"].asString();
+	for(uint32_t i=0;i<node_count;i++) {
+		other_public_ips[i] = config[std::to_string(i)].asString();
+	}
+	
+	// get IVs
+	hex_str_to(config["IV"]["PORT"].asString(), IVs[PORT]);
+	hex_str_to(config["IV"]["TOR PORT"].asString(), IVs[TOR_PORT]);
+	hex_str_to(config["IV"]["PUBLIC"].asString(), IVs[PUBLIC]);
+	for(uint32_t i=0;i<node_count;i++) {
+		hex_str_to(config["IV"][std::to_string(i)].asString(), IVs[i+PUBLIC_1]);
+	}
+}
+
+// reset config to file
+void Configure::reset()
+{
+	std::fstream file(config_path);
+	file >> config;
+}
+
+// write member values back
+void Configure::write_values()
+{
+	config["PORT"]      = port;
+	config["TOR PORT"]  = tor_port;
+	config["PUBLIC"]    = public_ip;
+	for(uint32_t i=0;i<node_count;i++) {
+		config[std::to_string(i)] = other_public_ips[i];
+	}
+
+	// IVs
+	config["IV"]["PORT"] = to_hex_str(IVs[PORT], CryptoPP::ChaCha::IV_LENGTH);
+	config["IV"]["TOR PORT"] = to_hex_str(IVs[TOR_PORT], CryptoPP::ChaCha::IV_LENGTH);
+	config["IV"]["PUBLIC"] = to_hex_str(IVs[PUBLIC], CryptoPP::ChaCha::IV_LENGTH);
+	for(uint32_t i=0;i<node_count;i++) {
+		config["IV"][std::to_string(i)] = to_hex_str(IVs[i+PUBLIC_1], CryptoPP::ChaCha::IV_LENGTH);
+	}
+}
+
+// call write_values() to assign object members to config then call this function to write to file
+void Configure::write_to_file()
+{
+	// write back to file
+	std::fstream file(config_path, std::ios_base::out);
+	file << config;
+}
+
+// generate 6 new IVs for encrypting config members
+// IVs are a nonce so save them in config and only use them once
+void Configure::new_ivs()
+{
+	CryptoPP::AutoSeededRandomPool rng;
+	rng.GenerateBlock((IVs[PORT]), CryptoPP::ChaCha::IV_LENGTH); // generate port IV
+	rng.GenerateBlock((IVs[TOR_PORT]), CryptoPP::ChaCha::IV_LENGTH); // generate tor port IV
+	rng.GenerateBlock((IVs[PUBLIC]), CryptoPP::ChaCha::IV_LENGTH); // generate public ip IV
+	rng.GenerateBlock((IVs[PUBLIC_1]), CryptoPP::ChaCha::IV_LENGTH); // generate public ip 1 IV
+	
+	// set config
+	config["IV"]["PORT"] = to_hex_str(IVs[PORT], CryptoPP::ChaCha::IV_LENGTH);
+	config["IV"]["TOR PORT"] = to_hex_str(IVs[TOR_PORT], CryptoPP::ChaCha::IV_LENGTH);
+	config["IV"]["PUBLIC"] = to_hex_str(IVs[PUBLIC], CryptoPP::ChaCha::IV_LENGTH);
+	for(uint32_t i=0;i<node_count;i++) {
+		config["IV"][std::to_string(i)] = to_hex_str(IVs[i+PUBLIC_1], CryptoPP::ChaCha::IV_LENGTH);
+	}
+}
+
+// decrypt all
+void Configure::decrypt(std::string keys_path)
+{
+	process(keys_path);
+}
+
+void Configure::encrypt(std::string keys_path)
+{
+	process(keys_path);
+	write_to_file(); // if encrypt, write to file
+}
+
+// encrypt/decrypt configure.json values in every session
+// config_path: the path of configure.json
+// keys_path: path of keys.txt
+// return config, call config.write_to_file() to save values
+void Configure::process(std::string keys_path)
+{
+	uint8_t *key = new uint8_t[32];
+	get_port_ip_key(key, keys_path); // assign key from file to array
+
+	// encrypt all values in configure
+	CryptoPP::ChaCha::Encryption chacha;
+	
+
+	// encrypt port
+	uint8_t *str_port = new uint8_t[2];
+	uint8_t port_len;
+
+	 // convert port to bytearray
+	if (port > 0xff) {
+		str_port[0] = (uint8_t)(port >> 8);
+		str_port[1] = (uint8_t)port;
+		port_len = 2;
+	} else {
+		*str_port = (uint8_t)port;
+		port_len = 1;
+	}
+	// encrypt port
+	uint8_t *ct = new uint8_t[port_len];
+	chacha.SetKeyWithIV(key, 32, IVs[PORT]); // 256-bit chacha20 encryption key
+	chacha.ProcessData(ct, (const CryptoPP::byte *)str_port, port_len);
+	port = ((uint16_t)ct[0] << 8) | ct[1];
+	
+	// encrypt/decrypt tor port
+
+	 // convert tor port to bytearray
+	if (tor_port > 0xff) {
+		str_port[0] = (uint8_t)(tor_port >> 8);
+		str_port[1] = (uint8_t)tor_port;
+		port_len = 2;
+	} else {
+		*str_port = (uint8_t)tor_port;
+		port_len = 1;
+	}
+	delete[] ct;
+	ct = new uint8_t[port_len];
+
+
+	chacha.SetKeyWithIV(key, 32, IVs[TOR_PORT]); // 256-bit chacha20 encryption key
+	chacha.ProcessData(ct, (const CryptoPP::byte *)str_port, port_len);
+	tor_port = ((uint16_t)ct[0] << 8) | ct[1];
+	delete[] str_port;
+	delete[] ct;
+
+	// encrypt/decrypt public ip, all IPs are encrypted byte by byte. the dots aren't encrypted
+	ct = new uint8_t[16];
+	uint8_t *ip = new uint8_t[16];
+	parse_ipv6(ip, public_ip);
+	chacha.SetKeyWithIV(key, 32, IVs[PUBLIC]); // 256-bit chacha20 encryption key
+	public_ip = "";
+	for(uint8_t i=0;i<8;i++) {
+		std::stringstream ss;
+		chacha.ProcessData(&ct[i*2], &ip[i*2], 1);
+		chacha.ProcessData(&ct[i*2+1], &ip[i*2+1], 1);
+		//ss << std::hex << ((uint16_t)ct[i*2] << 8 | ct[i*2+1]);
+		ss << std::setfill('0') << std::setw(2) << std::hex << ct[i*2]+0; 
+		ss << std::setfill('0') << std::setw(2) << std::hex << ct[i*2+1]+0;
+		public_ip += ss.str();
+		
+		if(i != 7) public_ip += ":";
+	}
+
+	// on other devices
+
+	// encrypt/decrypt public ip 1 (other device)
+	for(uint32_t n=0;n<node_count;n++) {
+		parse_ipv6(ip, other_public_ips[n]);
+		chacha.SetKeyWithIV(key, 32, IVs[n+PUBLIC_1]); // 256-bit chacha20 encryption key
+		other_public_ips[n] = "";
+		for(uint8_t i=0;i<8;i++) {
+			std::stringstream ss;
+			chacha.ProcessData(&ct[i*2], &ip[i*2], 1);
+			chacha.ProcessData(&ct[i*2+1], &ip[i*2+1], 1);
+			//ss << std::hex << ((uint16_t)ct[i*2] << 8 | ct[i*2+1]);
+			ss << std::setfill('0') << std::setw(2) << std::hex << ct[i*2]+0; 
+			ss << std::setfill('0') << std::setw(2) << std::hex << ct[i*2+1]+0;
+			other_public_ips[n] += ss.str();
+			if(i != 7) other_public_ips[n] += ":";
+		}
+	}
+
+	write_values();
+	delete[] ip;
+	delete[] key;
+	delete[] ct;
+}
+
 // default configure.json file don't forget to update IVs
 // generate file in new session
-void init_configure_json(std::string config_path)
+// returns decrypted version of configure.json
+Json::Value init_configure_json(std::string config_path, std::string keys_path)
 {
 	CryptoPP::AutoSeededRandomPool rng;
 	Json::Value json_conf;
 	std::ofstream file;
-
-	file.open(config_path, std::ios_base::out | std::ofstream::trunc);
 
 	json_conf["0"] = ZERO_IP;
 	json_conf["PUBLIC"] = get_ipv6();
@@ -153,235 +376,12 @@ void init_configure_json(std::string config_path)
 	json_conf["IV"]["PUBLIC"] = to_hex_str(ptr, CryptoPP::ChaCha::IV_LENGTH);
 	rng.GenerateBlock(ptr, CryptoPP::ChaCha::IV_LENGTH); // generate public ip 1 IV
 	json_conf["IV"]["0"] = to_hex_str(ptr, CryptoPP::ChaCha::IV_LENGTH);
-	
-	file << json_conf;
+	Configure config = Configure(config_path, json_conf);
+	config.encrypt(keys_path);
+
 	delete[] ptr;
+	return json_conf;
 }
-
-// parse configure.json in sessions, modify config for updating values
-class Configure
-{
-	public:
-		uint16_t port;
-		uint16_t tor_port;
-		std::string public_ip;
-		std::string *other_public_ips; // other ips
-		uint32_t node_count;
-		Json::Value config;
-		std::string config_path;
-		uint8_t **IVs; // IVs for all ips and ports in configuration.json
-		enum IV {PORT, TOR_PORT, PUBLIC, PUBLIC_1}; // indexing of iv
-
-		Configure(std::string configpath)
-		{
-			config_path = configpath;
-			std::fstream file(config_path);
-			file >> config;
-			node_count = get_node_count();
-
-			IVs = new uint8_t*[node_count+4];
-			for(uint8_t i=0;i<node_count+4;i++) IVs[i] = new uint8_t[CryptoPP::ChaCha::IV_LENGTH];
-			other_public_ips = new std::string[node_count];
-			get_values();
-		}
-
-		uint32_t get_node_count()
-		{
-			uint32_t i=0;
-			while (config.isMember(std::to_string(i))) i++;
-			return i;
-		}
-
-		// destructor
-		~Configure()
-		{
-			for(uint8_t i=0;i<node_count+4;i++) delete[] IVs[i];
-			delete[] IVs;
-			delete[] other_public_ips;
-		}
-
-		void get_values()
-		{
-			//std::cout << std::endl << to_hex_str(*IVs, CryptoPP::ChaCha::IV_LENGTH) << std::endl;
-			port = config["PORT"].asUInt();
-			tor_port = config["TOR PORT"].asUInt();
-			public_ip = config["PUBLIC"].asString();
-			for(uint32_t i=0;i<node_count;i++) {
-				other_public_ips[i] = config[std::to_string(i)].asString();
-			}
-			
-			// get IVs
-			hex_str_to(config["IV"]["PORT"].asString(), IVs[PORT]);
-			hex_str_to(config["IV"]["TOR PORT"].asString(), IVs[TOR_PORT]);
-			hex_str_to(config["IV"]["PUBLIC"].asString(), IVs[PUBLIC]);
-			for(uint32_t i=0;i<node_count;i++) {
-				hex_str_to(config["IV"][std::to_string(i)].asString(), IVs[i+PUBLIC_1]);
-			}
-		}
-
-		// reset config to file
-		void reset()
-		{
-			std::fstream file(config_path);
-			file >> config;
-		}
-
-		// write member values back
-		void write_values()
-		{
-			config["PORT"]      = port;
-			config["TOR PORT"]  = tor_port;
-			config["PUBLIC"]    = public_ip;
-			for(uint32_t i=0;i<node_count;i++) {
-				config[std::to_string(i)] = other_public_ips[i];
-			}
-
-			// IVs
-			config["IV"]["PORT"] = to_hex_str(IVs[PORT], CryptoPP::ChaCha::IV_LENGTH);
-			config["IV"]["TOR PORT"] = to_hex_str(IVs[TOR_PORT], CryptoPP::ChaCha::IV_LENGTH);
-			config["IV"]["PUBLIC"] = to_hex_str(IVs[PUBLIC], CryptoPP::ChaCha::IV_LENGTH);
-			for(uint32_t i=0;i<node_count;i++) {
-				config["IV"][std::to_string(i)] = to_hex_str(IVs[i+PUBLIC_1], CryptoPP::ChaCha::IV_LENGTH);
-			}
-		}
-
-		// call write_values() to assign object members to config then call this function to write to file
-		void write_to_file()
-		{
-			// write back to file
-			std::fstream file(config_path, std::ios_base::out);
-			file << config;
-		}
-
-		// generate 6 new IVs for encrypting config members
-		// IVs are a nonce so save them in config and only use them once
-		void new_ivs()
-		{
-			CryptoPP::AutoSeededRandomPool rng;
-			rng.GenerateBlock((IVs[PORT]), CryptoPP::ChaCha::IV_LENGTH); // generate port IV
-			rng.GenerateBlock((IVs[TOR_PORT]), CryptoPP::ChaCha::IV_LENGTH); // generate tor port IV
-			rng.GenerateBlock((IVs[PUBLIC]), CryptoPP::ChaCha::IV_LENGTH); // generate public ip IV
-			rng.GenerateBlock((IVs[PUBLIC_1]), CryptoPP::ChaCha::IV_LENGTH); // generate public ip 1 IV
-			
-			// set config
-			config["IV"]["PORT"] = to_hex_str(IVs[PORT], CryptoPP::ChaCha::IV_LENGTH);
-			config["IV"]["TOR PORT"] = to_hex_str(IVs[TOR_PORT], CryptoPP::ChaCha::IV_LENGTH);
-			config["IV"]["PUBLIC"] = to_hex_str(IVs[PUBLIC], CryptoPP::ChaCha::IV_LENGTH);
-			for(uint32_t i=0;i<node_count;i++) {
-				config["IV"][std::to_string(i)] = to_hex_str(IVs[i+PUBLIC_1], CryptoPP::ChaCha::IV_LENGTH);
-			}
-		}
-
-		// decrypt all
-		void decrypt(std::string keys_path)
-		{
-			process(keys_path);
-		}
-
-		void encrypt(std::string keys_path)
-		{
-			process(keys_path);
-			write_to_file(); // if encrypt, write to file
-		}
-
-	protected:
-
-		// encrypt/decrypt configure.json values in every session
-		// config_path: the path of configure.json
-		// keys_path: path of keys.txt
-		// return config, call config.write_to_file() to save values
-		void process(std::string keys_path)
-		{
-			uint8_t *key = new uint8_t[32];
-			get_port_ip_key(key, keys_path); // assign key from file to array
-		
-			// encrypt all values in configure
-			CryptoPP::ChaCha::Encryption chacha;
-			
-		
-			// encrypt port
-			uint8_t *str_port = new uint8_t[2];
-			uint8_t port_len;
-		
-			 // convert port to bytearray
-			if (port > 0xff) {
-				str_port[0] = (uint8_t)(port >> 8);
-				str_port[1] = (uint8_t)port;
-				port_len = 2;
-			} else {
-				*str_port = (uint8_t)port;
-				port_len = 1;
-			}
-			// encrypt port
-			uint8_t *ct = new uint8_t[port_len];
-			chacha.SetKeyWithIV(key, 32, IVs[PORT]); // 256-bit chacha20 encryption key
-			chacha.ProcessData(ct, (const CryptoPP::byte *)str_port, port_len);
-			port = ((uint16_t)ct[0] << 8) | ct[1];
-			
-			// encrypt/decrypt tor port
-		
-			 // convert tor port to bytearray
-			if (tor_port > 0xff) {
-				str_port[0] = (uint8_t)(tor_port >> 8);
-				str_port[1] = (uint8_t)tor_port;
-				port_len = 2;
-			} else {
-				*str_port = (uint8_t)tor_port;
-				port_len = 1;
-			}
-			delete[] ct;
-			ct = new uint8_t[port_len];
-		
-		
-			chacha.SetKeyWithIV(key, 32, IVs[TOR_PORT]); // 256-bit chacha20 encryption key
-			chacha.ProcessData(ct, (const CryptoPP::byte *)str_port, port_len);
-			tor_port = ((uint16_t)ct[0] << 8) | ct[1];
-			delete[] str_port;
-			delete[] ct;
-		
-			// encrypt/decrypt public ip, all IPs are encrypted byte by byte. the dots aren't encrypted
-			ct = new uint8_t[16];
-			uint8_t *ip = new uint8_t[16];
-			parse_ipv6(ip, public_ip);
-			chacha.SetKeyWithIV(key, 32, IVs[PUBLIC]); // 256-bit chacha20 encryption key
-			public_ip = "";
-			for(uint8_t i=0;i<8;i++) {
-				std::stringstream ss;
-				chacha.ProcessData(&ct[i*2], &ip[i*2], 1);
-				chacha.ProcessData(&ct[i*2+1], &ip[i*2+1], 1);
-				//ss << std::hex << ((uint16_t)ct[i*2] << 8 | ct[i*2+1]);
-				ss << std::setfill('0') << std::setw(2) << std::hex << ct[i*2]+0; 
-				ss << std::setfill('0') << std::setw(2) << std::hex << ct[i*2+1]+0;
-				public_ip += ss.str();
-				
-				if(i != 7) public_ip += ":";
-			}
-		
-			// on other devices
-		
-			// encrypt/decrypt public ip 1 (other device)
-			for(uint32_t n=0;n<node_count;n++) {
-				parse_ipv6(ip, other_public_ips[n]);
-				chacha.SetKeyWithIV(key, 32, IVs[n+PUBLIC_1]); // 256-bit chacha20 encryption key
-				other_public_ips[n] = "";
-				for(uint8_t i=0;i<8;i++) {
-					std::stringstream ss;
-					chacha.ProcessData(&ct[i*2], &ip[i*2], 1);
-					chacha.ProcessData(&ct[i*2+1], &ip[i*2+1], 1);
-					//ss << std::hex << ((uint16_t)ct[i*2] << 8 | ct[i*2+1]);
-					ss << std::setfill('0') << std::setw(2) << std::hex << ct[i*2]+0; 
-					ss << std::setfill('0') << std::setw(2) << std::hex << ct[i*2+1]+0;
-					other_public_ips[n] += ss.str();
-					if(i != 7) other_public_ips[n] += ":";
-				}
-			}
-		
-			write_values();
-			delete[] ip;
-			delete[] key;
-			delete[] ct;
-		}
-};
 
 // For testing keys
 // int main()

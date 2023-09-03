@@ -20,46 +20,19 @@ class Settings
 	uint32_t packet_size;
 	Json::Value setting;
 
-	Settings()
-	{
-		get_values();
-	}
+	Settings();
 
-	void get_values()
-	{
-		std::fstream settings("settings.json");
-		settings >> setting;
-		save = setting["save"].asBool();
-		tor = setting["tor"].asBool();
-		keys = setting["keys"].asString(); // private keys path
-		packet_size = setting["packet"].asLargestUInt(); // private keys path
-	}
+	void get_values();
+	
 
 	// reset to file
-	void reset()
-	{
-		std::fstream settings("settings.json");
-		settings >> setting;
-		
-	}
+	void reset();
 
 	// update json value setting to members
-	void update()
-	{
-		setting["save"] = save;
-		setting["keys"] = keys;
-		setting["tor"] = tor;
-		setting["packet_size"] = packet_size;
-	}
+	void update();
 
 	// write values back to file
-	void write_values()
-	{
-		// write back to file
-		std::fstream settings("settings.json", std::ios_base::out);
-		settings << setting;
-		
-	}
+	void write_values();
 };
 #endif /* SETTINGS_H */
 
