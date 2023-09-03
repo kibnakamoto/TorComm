@@ -10,10 +10,10 @@ HEADERS = settings.h keys.h settings.h
 CPPS = torcomm.cpp keys.cpp settings.cpp
 OBJS = torcomm.o keys.o settings.o
 
-all: ${OBJS}
+all: ${OBJS} 
 	${CXX} ${CXXFLAGS} ${OBJS} -o ${EXEC} ${FLAGS}
 	
-%.o: %.cpp %.h
+%.o: %.cpp
 	${CXX} ${CXXFLAGS} $< -c ${FLAGS}
 
 #${EXEC}: ${CPPS} ${HEADERS} ${OBJS}

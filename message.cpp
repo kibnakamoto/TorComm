@@ -13,7 +13,7 @@ class Message
 		enum format {TEXT, IMAGE, VIDEO, _FILE_, DELETE};
 
 		// message and time
-		Message(std::string message, std::string tm, std::string message_path)
+		Message(std::string message, std::string tm, std::string message_path, std::string from, std::string to)
 		{
 			msg = message;
 			timestamp = tm;

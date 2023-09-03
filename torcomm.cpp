@@ -8,6 +8,7 @@
 #include <boost/filesystem.hpp>
 
 #include "settings.h"
+#include "keys.h"
 
 int main()
 {
@@ -19,6 +20,7 @@ int main()
 		// TODO: implement GUI
 	}
 
+	// open and parse settings.json
 	try {
 		settings = Settings();
 		settings.get_values();
@@ -28,6 +30,8 @@ int main()
 		settings = Settings();
 		settings.get_values();
 	}
+	
+
 	std::cout << std::endl;
 	return 0;
 }
