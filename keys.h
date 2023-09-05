@@ -1,5 +1,6 @@
 #include <string>
 #include <stdint.h>
+#include <iomanip>
 
 #include <jsoncpp/json/json.h>
 
@@ -8,6 +9,25 @@ void new_port_ip_key();
 void get_port_ip_key(uint8_t *key);
 
 std::string to_hex_str(uint8_t *ptr, uint16_t ptr_len);
+
+// convert any unsigned num to hex-string
+std::string to_hex_str(auto num)
+{
+	std::stringstream ss;
+	if constexpr(sizeof(num) == 1)
+		ss << std::hex << std::setfill('0') << std::setw(2) << num+0;
+	else
+		ss << std::hex << std::setfill('0') << std::setw(sizeof(num)<<1) << num;
+	return ss.str();
+}
+
+// convert hex-string to any unsigned num
+void hex_str_to(std::string num, auto &out)
+{
+	std::stringstream ss;
+	ss << num;
+	ss >> out;
+}
 
 uint16_t hex_str_to(std::string str, uint8_t *ptr);
 
