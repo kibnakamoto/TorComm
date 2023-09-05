@@ -1,28 +1,30 @@
 #include <iostream>
 #include <jsoncpp/json/json.h>
+#include <ctime>
+#include <chrono>
+#include <string>
 
-// secure messages
+#include "message.h"
 
-class Message
+// TODO: secure messages
+
+// message and time
+Message::Message(std::string message, std::string tm, std::string message_path, std::string from, std::string to)
 {
-	public:
-		std::string timestamp; // time of message
-		std::string msg; // plaintext message to send or receive
-		Json::Value messages;
-		std::string messages_path;
-		enum format {TEXT, IMAGE, VIDEO, _FILE_, DELETE};
+	msg = message;
+	timestamp = tm;
+	messages_path = message_path;
+}
 
-		// message and time
-		Message(std::string message, std::string tm, std::string message_path, std::string from, std::string to)
-		{
-			msg = message;
-			timestamp = tm;
-			messages_path = message_path;
-		}
+// add to sessions/messages.json
+void Message::add(std::string messages_path, format type)
+{
+	
+}
 
-		// add to sessions/messages.json
-		void add(std::string messages_path, format _type_=TEXT)
-		{
-			
-		}
-};
+std::string get_time()
+{
+    auto time = std::chrono::system_clock::now();
+    std::time_t end_time = std::chrono::system_clock::to_time_t(time);
+	return std::ctime(&end_time);
+}

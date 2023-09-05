@@ -6,9 +6,9 @@ CURL_FLAGS = -lcurl
 BOOST_FLAGS = -lboost_filesystem
 FLAGS = ${BOOST_FLAGS} ${CRYPTOPP_FLAGS} ${JSON_FLAGS} ${CURL_FLAGS}
 EXEC = torcomm
-HEADERS = settings.h keys.h settings.h
-CPPS = torcomm.cpp keys.cpp settings.cpp
-OBJS = torcomm.o keys.o settings.o
+# HEADERS = settings.h keys.h settings.h comm.h message.h
+# CPPS = torcomm.cpp keys.cpp settings.cpp
+OBJS = torcomm.o keys.o settings.o comm.o message.o 
 
 all: ${OBJS} 
 	${CXX} ${CXXFLAGS} ${OBJS} -o ${EXEC} ${FLAGS}

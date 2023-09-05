@@ -1,6 +1,3 @@
-#ifndef TORCOMM_CPP
-#define TORCOMM_CPP
-
 #include <boost/filesystem/operations.hpp>
 #include <cstdio>
 #include <iostream>
@@ -30,10 +27,7 @@ int main()
 		settings = Settings();
 		settings.get_values();
 	}
-	
 
 	std::cout << std::endl;
 	return 0;
 }
-
-#endif /* TORCOMM_CPP */
