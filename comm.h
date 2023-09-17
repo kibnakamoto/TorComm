@@ -38,47 +38,37 @@ enum SIZE_LIMITS {
 
 // parse packet to get text, images, videos, or delete
 // then use Message class to 
+template<typename T=uint8_t*>
 class PacketParser
 {
 	public:
-			PacketParser( Message::format format)
-			{
-				switch (format)
-				{
-					case Message::TEXT:
-						;
-					case Message::IMAGE:
-						;
-					case Message::VIDEO:
-						;
-					case Message::_FILE_:
-						;
-					case Message::DELETE:
-						;
-				}
-			}
+			T data;
+			uint8_t error;
+
+			PacketParser(T packet);
+
 			// get the first 72 bits of data, len and type
-			void get72bits(uint8_t *packet, uint64_t &len, uint8_t &type);
+			void get72bits(uint64_t &len, uint8_t &type);
 
 			// parser functions, they return the parsed output, seperate the parts of the message
 			// len: uninitialized
 			// type: uninitialized
 			// returns uint8_t* or std::string
 
-			template<auto T>
-			auto p_text(uint8_t *packet, uint64_t &len, uint8_t &type) -> decltype(T);
+			template<auto R>
+			auto p_text(uint8_t *packet, uint64_t &len, uint8_t &type) -> decltype(R);
 
-			template<auto T>
-			auto p_image(uint8_t *packet, uint64_t &len, uint8_t &type) -> decltype(T);
+			template<auto R>
+			auto p_image(uint8_t *packet, uint64_t &len, uint8_t &type) -> decltype(R);
 
-			template<auto T>
-			auto p_video(uint8_t *packet, uint64_t &len, uint8_t &type) -> decltype(T);
+			template<auto R>
+			auto p_video(uint8_t *packet, uint64_t &len, uint8_t &type) -> decltype(R);
 
-			template<auto T>
-			auto p_file(uint8_t *packet, uint64_t &len, uint8_t &type) -> decltype(T);
+			template<auto R>
+			auto p_file(uint8_t *packet, uint64_t &len, uint8_t &type) -> decltype(R);
 
-			template<auto T>
-			auto p_delete(uint8_t *packet, uint64_t &len, uint8_t &type) -> decltype(T);
+			template<auto R>
+			auto p_delete(uint8_t *packet, uint64_t &len, uint8_t &type) -> decltype(R);
 };
 
 // Message structure for the first packet in communciation, First 4 bytes of message is message length, the rest is message, this is only on first message block
