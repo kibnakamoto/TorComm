@@ -21,12 +21,13 @@ int main()
 	try {
 		settings = Settings();
 		settings.get_values();
-	} catch(Json::RuntimeError &e)
+	} catch(Json::RuntimeError &e) // if file doesn't exist
 	{
 		init_settings_json(keys_path);
 		settings = Settings();
 		settings.get_values();
 	}
+	
 
 	std::cout << std::endl;
 	return 0;
