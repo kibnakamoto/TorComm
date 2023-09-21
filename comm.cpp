@@ -11,11 +11,6 @@
 // https://github.com/sehe/asio-socks45-client/tree/main
 //
 
-two_parties::Client::Client()
-{
-	
-}
-
 Server::~Server()
 {
 	delete[] buffer;

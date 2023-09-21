@@ -1,4 +1,29 @@
+#ifndef ERRORS_H
+#define ERRORS_H
+
+// error codes
 enum ERRORS
 {
-	WRONG_TYPE_ERROR = 10,
+	NO_ERROR,
+	WRONG_TYPE_ERROR,
+	ELLIPTIC_CURVE_NOT_FOUND,
+	COMMUNICATION_PROTOCOL_NOT_FOUND,
+	HASHING_ALGORITHM_NOT_FOUND,
+	ENCRYPTION_ALGORITHM_NOT_FOUND,
 };
+
+// error names as string
+const constexpr static char* ERROR_STRING[]
+{
+	"NO_ERROR",
+	"WRONG_TYPE_ERROR",
+	"ELLIPTIC_CURVE_NOT_FOUND",
+	"COMMUNICATION_PROTOCOL_NOT_FOUND",
+	"HASHING_ALGORITHM_NOT_FOUND",
+	"ENCRYPTION_ALGORITHM_NOT_FOUND",
+};
+// if USE_DEFAULT_VALUES, when an algorithm is not found, it will use a predefined one
+#define USE_DEFAULT_VALUES false
+
+#endif /* ERRORS_H */
+

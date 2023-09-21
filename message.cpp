@@ -9,7 +9,8 @@
 // TODO: secure messages
 
 // message and time
-Message::Message(std::string message, std::string tm, std::string message_path, std::string from, std::string to)
+template<typename T>
+Message<T>::Message(T message, std::string tm, std::string message_path, std::string from, std::string to, Settings settings)
 {
 	msg = message;
 	timestamp = tm;
@@ -17,7 +18,8 @@ Message::Message(std::string message, std::string tm, std::string message_path, 
 }
 
 // add to sessions/messages.json
-void Message::add(std::string messages_path, format type)
+template<typename T>
+void Message<T>::add(std::string messages_path, format type)
 {
 	
 }

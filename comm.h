@@ -36,6 +36,7 @@ enum SIZE_LIMITS {
     MAX_DELETE_SIZE = 0,        // 0x00000000  - Doesn't need a limit
 };
 
+// For parsing received network packets
 // parse packet to get text, images, videos, or delete
 // then use Message class to 
 template<typename T=uint8_t*>
@@ -43,7 +44,7 @@ class PacketParser
 {
 	public:
 			T data;
-			uint8_t error;
+			uint16_t error; // error code if type isn't string or uint8_t*
 
 			PacketParser(T packet);
 
@@ -55,62 +56,36 @@ class PacketParser
 			// type: uninitialized
 			// returns uint8_t* or std::string
 
-			template<auto R>
-			auto p_text(uint8_t *packet, uint64_t &len, uint8_t &type) -> decltype(R);
+			T p_text(uint8_t *packet, uint64_t &len, uint8_t &type);
 
-			template<auto R>
-			auto p_image(uint8_t *packet, uint64_t &len, uint8_t &type) -> decltype(R);
+			T p_image(uint8_t *packet, uint64_t &len, uint8_t &type);
 
-			template<auto R>
-			auto p_video(uint8_t *packet, uint64_t &len, uint8_t &type) -> decltype(R);
+			T p_video(uint8_t *packet, uint64_t &len, uint8_t &type);
 
-			template<auto R>
-			auto p_file(uint8_t *packet, uint64_t &len, uint8_t &type) -> decltype(R);
+			T p_file(uint8_t *packet, uint64_t &len, uint8_t &type);
 
-			template<auto R>
-			auto p_delete(uint8_t *packet, uint64_t &len, uint8_t &type) -> decltype(R);
+			T p_delete(uint8_t *packet, uint64_t &len, uint8_t &type);
 };
 
+
+
+// PROTOTYPIC:
 // Message structure for the first packet in communciation, First 4 bytes of message is message length, the rest is message, this is only on first message block
 // 4 byte msg_len
 // 1020 byte default packet size
-template<typename T>
-struct GenesisPacket
-{
-	uint64_t msg_len;
-	uint8_t msg_type; // Message::format
-	T msg;
-};
-
-template<typename T>
-struct Packet
-{
-	T msg;
-};
-
-
-// two peer communication
-namespace two_parties
-{
-	// define single client, this is for non-groupchats
-	class Client
-	{
-		Client();
-		~Client();
-	};
-
-	// define single server, this is for non-groupchats
-	class Server
-	{
-		Server();
-		~Server();
-	};
-
-	class P2P
-	{
-		
-	};
-}; /* namespace two_parties */
+// template<typename T>
+// struct GenesisPacket
+// {
+// 	uint64_t msg_len;
+// 	uint8_t msg_type; // Message::format
+// 	T msg;
+// };
+// 
+// template<typename T>
+// struct Packet
+// {
+// 	T msg;
+// };
 
 // Client can connect to multiple servers
 class Client
