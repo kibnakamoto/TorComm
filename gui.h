@@ -1,3 +1,6 @@
+#ifndef GUI_H
+#define GUI_H
+
 #include <qt5/QtWidgets/QWidget>
 #include <qt5/QtCore/QString>
 
@@ -15,3 +18,4 @@ class FileFinder : public QWidget
 			}
 			
 };
+#endif /* GUI_H */

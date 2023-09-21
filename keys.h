@@ -1,3 +1,6 @@
+#ifndef KEYS_H
+#define KEYS_H
+
 #include <string>
 #include <stdint.h>
 #include <iomanip>
@@ -92,3 +95,5 @@ class Configure
 		// return config, call config.write_to_file() to save values
 		void process(std::string keys_path);
 };
+
+#endif /* KEYS_H */
