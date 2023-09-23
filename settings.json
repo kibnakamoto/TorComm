@@ -1,6 +1,5 @@
 {
 	"keys" : "./keys.txt",
-	"packet_size" : 1024,
 	"save" : 1,
 	"time": 1,
 	"tor" : 1,
