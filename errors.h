@@ -24,6 +24,7 @@ const constexpr static char* ERROR_STRING[]
 };
 // if USE_DEFAULT_VALUES, when an algorithm is not found, it will use a predefined one
 #define USE_DEFAULT_VALUES false
+#define ERRORS_LOG_FILE "log/errors.log"
 
 #endif /* ERRORS_H */
 
