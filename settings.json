@@ -3,6 +3,7 @@
 	"save" : 1,
 	"time": 1,
 	"tor" : 1,
+	"protocol": 0,
 	"GUI": {
 	}
 }

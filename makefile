@@ -13,7 +13,7 @@ OBJS = torcomm.o keys.o settings.o comm.o message.o
 all: ${OBJS}
 	${CXX} ${CXXFLAGS} ${OBJS} -o ${EXEC} ${FLAGS}
 	
-%.o: %.cpp ${HEADERS}
+%.o: %.cpp %.h
 	${CXX} ${CXXFLAGS} $< -c ${FLAGS}
 
 #${EXEC}: ${CPPS} ${HEADERS} ${OBJS}
