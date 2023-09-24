@@ -1,6 +1,7 @@
-#include <functional>
 #ifndef MESSAGE_H
 #define MESSAGE_H
+#include <functional>
+#include <string>
 
 #include <cryptopp/cryptlib.h>
 #include <cryptopp/aes.h>
@@ -9,6 +10,11 @@
 #include <cryptopp/oids.h>
 #include <cryptopp/integer.h>
 #include <cryptopp/hkdf.h>
+#include <cryptopp/modes.h>
+#include <cryptopp/rijndael.h>
+#include <cryptopp/gcm.h>
+
+#include <boost/variant/variant.hpp>
 
 #include <jsoncpp/json/json.h>
 
@@ -28,7 +34,6 @@ namespace Cryptography
 	// GLOBAL:
 	// 	 ECDH for key communication
 	// 	 HKDF for key derevation
-	// 	 AES uses CBC mode (for performance reasons: https://cryptopp.com/benchmarks.html)
 	enum CommunicationProtocol {
 
 		ECIES_ECDSA_AES256_CBC_SHA256,
@@ -74,7 +79,7 @@ namespace Cryptography
 	};
 
 	enum CipherMode {
-		CBC, // currently the only supported one
+		CBC,
 		GCM
 	};
 
@@ -83,13 +88,19 @@ namespace Cryptography
 		SHA512
 	};
 
+	// 64-bit salt for HKDF
+	const constexpr static uint8_t salt[8] = {0x8f, 0x49, 0xa8, 0x2c, 0x21, 0xb5, 0x96, 0x5c};
+	const constexpr uint8_t salt_len = sizeof(salt)/sizeof(salt[0]);
+
 	// the default values to assign
-	uint8_t default_communication_protocol = (uint8_t)Cryptography::SECP256R1 + Cryptography::ECIES_ECDSA_AES256_CBC_SHA256;
+	// AES uses CBC mode (for performance reasons: https://cryptopp.com/benchmarks.html)
+	inline uint8_t default_communication_protocol = (uint8_t)SECP256R1 + ECIES_ECDSA_AES256_CBC_SHA256;
 
 	// initialize general protocol data based on protocol number
-	class ProtocolData
+	class ProtocolData : public ErrorHandling
 	{
 		public:
+
 			HashAlgorithm hash; // hashing algorithm used
 			CipherAlgorithm cipher; // cipher used
 			CipherMode cipher_mode; // cipher mode
@@ -112,10 +123,10 @@ namespace Cryptography
 				init_cipher_data();
 
 				// if error caused: can only be ENCRYPTION_ALGORITHM_NOT_FOUND
-				error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND, error_handler_encryption_function_not_found, encryption_unexpected_error);
+				error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND, error_handler_encryption_function_not_found, encryption_unexpected_error, get_time);
 
 				init_hash_data();
-				error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error);
+				error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error, get_time);
 			}
 
 			ProtocolData(CommunicationProtocol protocol, Curves curve)
@@ -124,64 +135,29 @@ namespace Cryptography
 				this->curve = curve;
 
 				init_cipher_data();
-				error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND, error_handler_encryption_function_not_found, encryption_unexpected_error);
+				error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND, error_handler_encryption_function_not_found, encryption_unexpected_error, get_time);
 
 				init_hash_data();
-				error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error);
-			}
-
-			// lambda function is for what to do in case of error
-			void error_handle(ERRORS check_error, auto&& lambda_for_error, auto&& lambda_for_unexpected_error)
-			{
-				// if error caused: can only be ENCRYPTION_ALGORITHM_NOT_FOUND
-				if(error_code != NO_ERROR) {
-					if(error_code == check_error) {
-						error_code = NO_ERROR; // assign error code to None
-						lambda_for_error();
-					} else {
-						// if a different error raised: unexpected behaviour
-						error_code = NO_ERROR; // replace error code with None
-						lambda_for_unexpected_error();
-					}
-				}
+				error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error, get_time);
 			}
 
 		private:
 			// error handler for hash function not found
-			std::function<void()> error_handler_hash_function_not_found=[](){
-				if constexpr(!USE_DEFAULT_VALUES) // defined in errors.h
+			std::function<void()> error_handler_hash_function_not_found=[]() {
+				if (!USE_DEFAULT_VALUES) // defined in errors.h
 					throw HASHING_ALGORITHM_NOT_FOUND;
 				else
 					ProtocolData(default_communication_protocol+0);
 			};
 
 			// error handler for encryption_algorithm_not_found
-			std::function<void()> error_handler_encryption_function_not_found=[](){
-				if constexpr(!USE_DEFAULT_VALUES) // defined in errors.h
+			std::function<void()> error_handler_encryption_function_not_found=[]() {
+				if (!USE_DEFAULT_VALUES) // defined in errors.h
 					throw ENCRYPTION_ALGORITHM_NOT_FOUND;
 				else
 					ProtocolData(default_communication_protocol+0);
 			};
 
-			// find error and raise it after adding to a log file
-			std::function<void(ERRORS)> encryption_unexpected_error=[](ERRORS error_code){
-				std::ofstream file("error.log", std::fstream::in | std::fstream::out | std::fstream::app);
-				file << "\nENCRYPTION UNEXPECTED ERROR (in Cryptography::ProtocolData::init_cipher_data) = TIME: " << get_time() << "\tERROR_CODE: " << error_code << "\tERROR_ID: " << ERROR_STRING[error_code];
-				file.close();
-
-				throw error_code;
-			};
-
-			// find error and raise it after adding to a log file
-			std::function<void(ERRORS)> hashing_unexpected_error=[](ERRORS error_code){
-				std::ofstream file("error.log", std::fstream::in | std::fstream::out | std::fstream::app);
-				file << "\nHASHING UNEXPECTED ERROR (in Cryptography::ProtocolData::init_hash_data) = TIME: " << get_time() << "\tERROR_CODE: " << error_code << "\tERROR_ID: " << ERROR_STRING[error_code];
-				file.close();
-
-				throw error_code;
-			};
-
-			// currently only supports AES256
 			void init_cipher_data()
 			{
 				if(communication_protocols[protocol].find("AES256") != std::string::npos) {
@@ -230,19 +206,20 @@ namespace Cryptography
 
 	};
 
-	class Key
+	// initialize key
+	class Key : public ErrorHandling
 	{
 		CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP> group;
-		ERRORS error = NO_ERROR;
+		ProtocolData &protocol;
 
 		public:
 				CryptoPP::Integer private_key;
 				CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element public_key;
-				CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element cipher_key; // established key
+				uint8_t *key; // established key
 
-				Key(Curves p=SECP256R1)
+				Key(ProtocolData &protocol) : protocol(protocol)
 				{
-					switch(p) {
+					switch(protocol.curve) {
 						case SECP256K1:
 							group.Initialize(CryptoPP::ASN1::secp256k1());
 							break;
@@ -259,7 +236,7 @@ namespace Cryptography
 							group.Initialize(CryptoPP::ASN1::brainpoolP512r1());
 							break;
 						default:
-							error = ELLIPTIC_CURVE_NOT_FOUND;
+							error = ELLIPTIC_CURVE_NOT_FOUND; // TODO: implement error handling
 					}
 					CryptoPP::AutoSeededRandomPool rand;
 					private_key = CryptoPP::Integer(rand, CryptoPP::Integer::One(), group.GetMaxExponent()); // generate private key
@@ -272,31 +249,50 @@ namespace Cryptography
 					return group.GetCurve().ScalarMultiply(b_public_k, private_key);
 				}
 
-				void hkdf(CommunicationProtocol protocol)
+				void hkdf()
 				{
-					// if sha256
-
-					if(communication_protocols[protocol].find("SHA256") != std::string::npos) {
+					if(protocol.hash == SHA256) {
 						CryptoPP::HKDF<CryptoPP::SHA256> hkdf;
-					    //hkdf.DeriveKey(key, key.size(), (const byte*)password.data(), password.size(), (const byte*)iv.data(), iv.size(), NULL, 0);
-					} else if (communication_protocols[protocol].find("SHA512") != std::string::npos) {
-						
+					    hkdf.DeriveKey(key, protocol.block_size, (const uint8_t*)"", 0, salt, salt_len, NULL, 0);
+					} else if (protocol.hash == SHA512) {
+						CryptoPP::HKDF<CryptoPP::SHA512> hkdf;
+					    hkdf.DeriveKey(key, protocol.block_size, (const uint8_t*)"", 0, salt, salt_len, NULL, 0);
 					} else {
 						error = HASHING_ALGORITHM_NOT_FOUND;
 					}
-						
 				}
 	};
 
 	// encryption
-	class Cipher
+	class Cipher : public ErrorHandling
 	{
-		public:
-				Cipher(uint8_t protocol=(uint8_t)SECP256K1 + ECIES_ECDSA_AES256_CBC_SHA256) 
-				{
-					switch(protocol) {
-						//case SECP256K1 + ECIES_ECDSA_AES256_CBC_SHA256:
+		ProtocolData &protocol;
 
+		public:
+				
+
+				Cipher(ProtocolData &protocol) : protocol(protocol)
+				{
+					
+				}
+
+				boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
+							   CryptoPP::GCM<CryptoPP::AES>::Encryption  // aes gcm mode
+							   > get_cipher()
+				{
+					switch(protocol.cipher) {
+						case AES256:
+						case AES192:
+						case AES128:
+							if(protocol.cipher_mode == CBC) {
+								return CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption();
+							} else if(protocol.cipher_mode == GCM) {
+								return CryptoPP::GCM<CryptoPP::AES>::Encryption();
+							}
+						case CHACHA20:
+						default:
+							error = ENCRYPTION_ALGORITHM_NOT_FOUND;
+							break;
 					}
 				}
 	};
