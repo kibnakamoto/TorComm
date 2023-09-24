@@ -1,7 +1,10 @@
 #ifndef MESSAGE_H
 #define MESSAGE_H
+
+#include <cstdlib>
 #include <functional>
 #include <string>
+#include <concepts>
 
 #include <cryptopp/cryptlib.h>
 #include <cryptopp/aes.h>
@@ -13,6 +16,7 @@
 #include <cryptopp/modes.h>
 #include <cryptopp/rijndael.h>
 #include <cryptopp/gcm.h>
+#include <cryptopp/chacha.h>
 
 #include <boost/variant/variant.hpp>
 
@@ -140,6 +144,8 @@ namespace Cryptography
 				init_hash_data();
 				error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error, get_time);
 			}
+			friend class Cipher;
+			friend class Key;
 
 		private:
 			// error handler for hash function not found
@@ -219,6 +225,7 @@ namespace Cryptography
 
 				Key(ProtocolData &protocol) : protocol(protocol)
 				{
+					key = new uint8_t[protocol.block_size];
 					switch(protocol.curve) {
 						case SECP256K1:
 							group.Initialize(CryptoPP::ASN1::secp256k1());
@@ -243,12 +250,18 @@ namespace Cryptography
 					public_key  = group.ExponentiateBase(private_key);
 				}
 
+				~Key()
+				{
+					delete[] key;
+				}
+
 				// bob's public key is multiplied with alice's to generate the ECDH key.
 				inline CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element multiply(CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k)
 				{
 					return group.GetCurve().ScalarMultiply(b_public_k, private_key);
 				}
 
+				// Hash based key deravation function
 				void hkdf()
 				{
 					if(protocol.hash == SHA256) {
@@ -267,18 +280,26 @@ namespace Cryptography
 	class Cipher : public ErrorHandling
 	{
 		ProtocolData &protocol;
-
+		uint8_t *key; // key length is protocol.block_size
+		uint8_t *iv; // iv length is protocol.iv_size
 		public:
 				
 
-				Cipher(ProtocolData &protocol) : protocol(protocol)
+				Cipher(ProtocolData &protocol, uint8_t *key, uint8_t *iv=nullptr) : protocol(protocol)
 				{
-					
+					this->key = key; // no need to destroy key since it's not allocated here.
+					if(this->iv != nullptr) {
+						this->iv = iv; // no need to destroy key since it's not allocated here.
+					} else {
+						// generate iv
+					}
 				}
 
+				// to get cipher: auto cipher = get_cipher();
 				boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
-							   CryptoPP::GCM<CryptoPP::AES>::Encryption  // aes gcm mode
-							   > get_cipher()
+							   CryptoPP::GCM<CryptoPP::AES>::Encryption,      // aes gcm mode
+							   CryptoPP::ChaCha::Encryption>                  // ChaCha20
+							   get_cipher()
 				{
 					switch(protocol.cipher) {
 						case AES256:
@@ -290,15 +311,60 @@ namespace Cryptography
 								return CryptoPP::GCM<CryptoPP::AES>::Encryption();
 							}
 						case CHACHA20:
+							return CryptoPP::ChaCha::Encryption();
 						default:
 							error = ENCRYPTION_ALGORITHM_NOT_FOUND;
-							break;
+							error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND,
+										 protocol.error_handler_encryption_function_not_found,
+										 encryption_unexpected_error, get_time);
+							get_cipher(); // try again
 					}
 				}
-	};
 
+				// set key with iv
+				void set_key(auto cipher)
+				{
+					cipher.setKeyWithIv(key, protocol.key_size, iv, protocol.iv_size);
+				}
+
+				// https://stackoverflow.com/questions/42817362/encrypt-decrypt-byte-array-crypto#42820221
+
+				// cipher: output of get_cipher()
+				// data: string, or uint8_t ptr, or buffer, etc. Plaintext
+				// length: data length
+				// ct: ciphertext
+				// ct_len: ciphertext length
+				void encrypt(auto cipher, auto data, uint64_t length, uint8_t *ct, uint64_t ct_len)
+				{
+						if constexpr(std::is_same<decltype(data), std::string>()) {
+							// CryptoPP::StringSource s(plain, true,
+           					// 						 new CryptoPP::StreamTransformationFilter(cipher,
+                			// 						 								new CryptoPP::StringSink(cipher));
+						}
+				}
+	};
 }; /* namespace Cryptography */
 
+// TODO: remember to error handle using
+// try {
+//		 // create object of class
+// } catch(ERRORS error) {
+//		// handle error code
+// }
+
+// To use ProtocolData: Dont forget try catch for initializing them
+// protocol = ProtocolData(ECIES_ECDSA_AES256_CBC_SHA256);
+
+// To use Key:
+// k = Key(protocol);
+// k.multiply(bobs_key)
+// key = k.hkdf();
+
+// To use Cipher:
+// c = Cipher(protocol, key, iv);
+// auto cipher = c.get_cipher();
+// c.set_key(cipher);
+// c.encrypt(cipher, msg, length);
 
 /* This is AFTER PARSING the received message
  * Purpose of this class:
