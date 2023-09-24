@@ -52,6 +52,7 @@ class ErrorHandling
 			}
 		}
 
+		// CIPHER
 		// find error and raise it after adding to a log file
 		std::function<void(ERRORS, std::string)> encryption_unexpected_error=[](ERRORS error_code, std::string time) {
 			std::ofstream file(ERRORS_LOG_FILE, std::fstream::in | std::fstream::out | std::fstream::app);
@@ -62,6 +63,7 @@ class ErrorHandling
 			throw error_code;
 		};
 
+		// ELLIPTIC CURVE
 		// find error and raise it after adding to a log file
 		std::function<void(ERRORS, std::string)> curve_unexpected_error=[](ERRORS error_code, std::string time) {
 			std::ofstream file(ERRORS_LOG_FILE, std::fstream::in | std::fstream::out | std::fstream::app);
@@ -72,6 +74,7 @@ class ErrorHandling
 			throw error_code;
 		};
 		
+		// HASHING
 		// find error and raise it after adding to a log file
 		std::function<void(ERRORS, std::string)> hashing_unexpected_error=[](ERRORS error_code, std::string time) {
 			std::ofstream file(ERRORS_LOG_FILE, std::fstream::in | std::fstream::out | std::fstream::app);
