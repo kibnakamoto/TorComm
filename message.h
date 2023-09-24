@@ -5,6 +5,7 @@
 #include <functional>
 #include <string>
 #include <concepts>
+#include <stdlib.h>
 
 #include <cryptopp/cryptlib.h>
 #include <cryptopp/aes.h>
@@ -19,6 +20,7 @@
 #include <cryptopp/chacha.h>
 
 #include <boost/variant/variant.hpp>
+#include <boost/asio/buffer.hpp>
 
 #include <jsoncpp/json/json.h>
 
@@ -112,6 +114,7 @@ namespace Cryptography
 			CommunicationProtocol protocol; // full communication protocol used
 			uint16_t iv_size;
 			uint16_t key_size;
+			uint16_t ct_size; // size of ciphertext block size
 			
 			// for efficient custom error checking
 			ERRORS error_code = NO_ERROR;
@@ -166,6 +169,7 @@ namespace Cryptography
 
 			void init_cipher_data()
 			{
+				ct_size=32;
 				if(communication_protocols[protocol].find("AES256") != std::string::npos) {
 					iv_size = 16;
 					cipher = AES256;
@@ -185,7 +189,7 @@ namespace Cryptography
 					iv_size = 12;
 					cipher = CHACHA20;
 					key_size = 32;
-					block_size = 16;
+					block_size = ct_size;
 				} else {
 					error_code = ENCRYPTION_ALGORITHM_NOT_FOUND;
 				}
@@ -225,7 +229,7 @@ namespace Cryptography
 
 				Key(ProtocolData &protocol) : protocol(protocol)
 				{
-					key = new uint8_t[protocol.block_size];
+					key = new uint8_t[protocol.key_size];
 					switch(protocol.curve) {
 						case SECP256K1:
 							group.Initialize(CryptoPP::ASN1::secp256k1());
@@ -266,10 +270,10 @@ namespace Cryptography
 				{
 					if(protocol.hash == SHA256) {
 						CryptoPP::HKDF<CryptoPP::SHA256> hkdf;
-					    hkdf.DeriveKey(key, protocol.block_size, (const uint8_t*)"", 0, salt, salt_len, NULL, 0);
+					    hkdf.DeriveKey(key, protocol.key_size, (const uint8_t*)"", 0, salt, salt_len, NULL, 0);
 					} else if (protocol.hash == SHA512) {
 						CryptoPP::HKDF<CryptoPP::SHA512> hkdf;
-					    hkdf.DeriveKey(key, protocol.block_size, (const uint8_t*)"", 0, salt, salt_len, NULL, 0);
+					    hkdf.DeriveKey(key, protocol.key_size, (const uint8_t*)"", 0, salt, salt_len, NULL, 0);
 					} else {
 						error = HASHING_ALGORITHM_NOT_FOUND;
 					}
@@ -280,7 +284,7 @@ namespace Cryptography
 	class Cipher : public ErrorHandling
 	{
 		ProtocolData &protocol;
-		uint8_t *key; // key length is protocol.block_size
+		uint8_t *key; // key length is protocol.key_size
 		uint8_t *iv; // iv length is protocol.iv_size
 		public:
 				
@@ -292,6 +296,8 @@ namespace Cryptography
 						this->iv = iv; // no need to destroy key since it's not allocated here.
 					} else {
 						// generate iv
+						CryptoPP::AutoSeededRandomPool rnd;
+						rnd.GenerateBlock(iv, protocol.iv_size);
 					}
 				}
 
@@ -331,16 +337,61 @@ namespace Cryptography
 
 				// cipher: output of get_cipher()
 				// data: string, or uint8_t ptr, or buffer, etc. Plaintext
-				// length: data length
+				// length: data length, the send packet length. if 1GB image, it would be IMAGE_BUFFER_SIZE, if last packet, it would be whatever is left, that one needs to be padded
 				// ct: ciphertext
 				// ct_len: ciphertext length
-				void encrypt(auto cipher, auto data, uint64_t length, uint8_t *ct, uint64_t ct_len)
+				void encrypt(auto cipher, auto data, uint16_t length, uint8_t *ct, uint16_t ct_len)
 				{
-						if constexpr(std::is_same<decltype(data), std::string>()) {
-							// CryptoPP::StringSource s(plain, true,
-           					// 						 new CryptoPP::StreamTransformationFilter(cipher,
-                			// 						 								new CryptoPP::StringSink(cipher));
+						uint8_t *pt; // padding assumed to be done, use the pad function for padding
+						ct = new uint8_t[length+protocol.iv_size];
+
+						// data has to be uint8_t*
+						if constexpr(!std::is_same<decltype(data), uint8_t*>())
+							pt = to_uint8_ptr(data);
+
+						
+						// check the encryption types
+						switch(protocol.cipher) {
+							case CHACHA20:
+					 			cipher.ProcessData((uint8_t*)&ct[0], (const uint8_t*)pt, length);
+								break;
+							case AES256:
+							case AES192:
+							case AES128:
+								// encrypt
+								break;
 						}
+				}
+
+				// to convert strings and boost buffers to uint8_t*
+				static uint8_t *to_uint8_ptr(auto data)
+				{
+					if constexpr(std::is_same<decltype(data), std::string>()) {
+						return data.c_str();
+					} else if constexpr(std::is_same<decltype(data), boost::asio::const_buffers_1>(),
+										std::is_same<decltype(data), boost::asio::mutable_buffers_1>()) { // convert buffer to uint8_t*
+						return boost::asio::buffer_cast<uint8_t*>(data);
+					} else { // uint8_t*
+						return data;
+					}
+				}
+
+				// reminder: length of data is the length of plaintext data to send. Data packet. Not the whole data
+				// Also remember to delete using free function rather than delete because of calloc
+
+				// data: plaintext bytearray. Must be allocated using new uint8_t[length]
+				// length: length of data
+				// pad_size: pad_size, add to packet
+				uint8_t *pad(uint8_t *data, uint16_t &length, uint8_t &pad_size)
+				{
+					uint8_t *dat;
+					uint16_t original_length = length;
+					pad_size = protocol.block_size - length % protocol.block_size;
+					length += pad_size;
+					dat = (uint8_t*)calloc(length, sizeof(uint8_t));
+					memcpy(dat, data, original_length);
+					delete[] data;
+					return dat;
 				}
 	};
 }; /* namespace Cryptography */
@@ -364,7 +415,17 @@ namespace Cryptography
 // c = Cipher(protocol, key, iv);
 // auto cipher = c.get_cipher();
 // c.set_key(cipher);
-// c.encrypt(cipher, msg, length);
+
+// if plaintext type != uint8_t*:
+// 		to_uint8_ptr(plaintext);
+// if length % protocol.block_size != 0:
+// 		pad(plaintext, length, pad_size);
+// c.encrypt(cipher, plaintext, length, ciphertext, ciphertext_length);
+// delete[] ciphertext;
+// if pad_size == 0:
+// 		delete[] plaintext;
+// else
+// 		free(plaintext); 
 
 /* This is AFTER PARSING the received message
  * Purpose of this class:
