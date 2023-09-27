@@ -34,7 +34,6 @@ std::string get_time();
 // key: encryption key
 // ct: ciphertext, key
 
-// IMPORTANT:  only ECIES_ECDSA_AES256_CBC_SHA256 supported for now
 namespace Cryptography
 {
 	// GLOBAL:
@@ -49,8 +48,8 @@ namespace Cryptography
 		ECIES_ECDSA_AES128_CBC_SHA256,
 		ECIES_ECDSA_AES128_CBC_SHA512,
 
-		ECIES_ECDSA_CHACHA20_CBC_SHA256,
-		ECIES_ECDSA_CHACHA20_CBC_SHA512,
+		ECIES_ECDSA_CHACHA20_SHA256,
+		ECIES_ECDSA_CHACHA20_SHA512,
 		LAST // not a value, just for iteration
 	};
 
@@ -85,6 +84,7 @@ namespace Cryptography
 	};
 
 	enum CipherMode {
+		NO_MODE, // only for chacha
 		CBC,
 		GCM
 	};
@@ -111,7 +111,7 @@ namespace Cryptography
 			CipherAlgorithm cipher; // cipher used
 			CipherMode cipher_mode; // cipher mode
 			Curves curve; // Elliptic curve used
-			CommunicationProtocol protocol; // full communication protocol used
+			CommunicationProtocol protocol; // not full communication protocol used, doesn't include elliptic curve used
 			uint16_t iv_size;
 			uint16_t key_size;
 			uint16_t ct_size; // size of ciphertext block size
@@ -122,7 +122,14 @@ namespace Cryptography
 			// block size of cipher. plaintext has to be a multiple of block_size (padded)
 			uint16_t block_size;
 
+			ProtocolData() = default;
+
 			ProtocolData(uint8_t protocol_no)
+			{
+				init(protocol_no);
+			}
+
+			void init(uint8_t protocol_no)
 			{
 				// seperate protocol and curve
 				protocol = (CommunicationProtocol)(protocol_no - protocol_no % LAST);
@@ -197,8 +204,10 @@ namespace Cryptography
 				// set cipher mode
 				if(communication_protocols[protocol].find("CBC") != std::string::npos) {
 					cipher_mode = CBC;
-				} else if(communication_protocols[protocol].find("CBC") != std::string::npos) {
+				} else if(communication_protocols[protocol].find("GCM") != std::string::npos) {
 					cipher_mode = GCM;
+				} else {
+					cipher_mode = NO_MODE;
 				}
 			}
 	
@@ -220,7 +229,7 @@ namespace Cryptography
 	class Key : public ErrorHandling
 	{
 		CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP> group;
-		ProtocolData &protocol;
+		ProtocolData protocol;
 
 		public:
 				CryptoPP::Integer private_key;
@@ -247,7 +256,15 @@ namespace Cryptography
 							group.Initialize(CryptoPP::ASN1::brainpoolP512r1());
 							break;
 						default:
-							error = ELLIPTIC_CURVE_NOT_FOUND; // TODO: implement error handling
+							error = ELLIPTIC_CURVE_NOT_FOUND;
+							error_handle(ELLIPTIC_CURVE_NOT_FOUND,
+							[protocol]() mutable { // elliptic curve not found
+								if (!USE_DEFAULT_VALUES) // defined in errors.h
+									throw ELLIPTIC_CURVE_NOT_FOUND;
+								else
+									protocol.init(default_communication_protocol+0);
+							},
+							ErrorHandling::curve_unexpected_error, get_time);
 					}
 					CryptoPP::AutoSeededRandomPool rand;
 					private_key = CryptoPP::Integer(rand, CryptoPP::Integer::One(), group.GetMaxExponent()); // generate private key
@@ -283,7 +300,7 @@ namespace Cryptography
 	// encryption
 	class Cipher : public ErrorHandling
 	{
-		ProtocolData &protocol;
+		ProtocolData protocol;
 		uint8_t *key; // key length is protocol.key_size
 		uint8_t *iv; // iv length is protocol.iv_size
 		public:
@@ -292,7 +309,7 @@ namespace Cryptography
 				Cipher(ProtocolData &protocol, uint8_t *key, uint8_t *iv=nullptr) : protocol(protocol)
 				{
 					this->key = key; // no need to destroy key since it's not allocated here.
-					if(this->iv != nullptr) {
+					if(iv != nullptr) {
 						this->iv = iv; // no need to destroy key since it's not allocated here.
 					} else {
 						// generate iv
@@ -361,6 +378,7 @@ namespace Cryptography
 								// encrypt
 								break;
 						}
+						memcpy((ct+length), iv, protocol.iv_size);
 				}
 
 				// to convert strings and boost buffers to uint8_t*
@@ -368,7 +386,7 @@ namespace Cryptography
 				{
 					if constexpr(std::is_same<decltype(data), std::string>()) {
 						return data.c_str();
-					} else if constexpr(std::is_same<decltype(data), boost::asio::const_buffers_1>(),
+					} else if constexpr(std::is_same<decltype(data), boost::asio::const_buffers_1>() ||
 										std::is_same<decltype(data), boost::asio::mutable_buffers_1>()) { // convert buffer to uint8_t*
 						return boost::asio::buffer_cast<uint8_t*>(data);
 					} else { // uint8_t*
@@ -377,22 +395,26 @@ namespace Cryptography
 				}
 
 				// reminder: length of data is the length of plaintext data to send. Data packet. Not the whole data
-				// Also remember to delete using free function rather than delete because of calloc
 
 				// data: plaintext bytearray. Must be allocated using new uint8_t[length]
 				// length: length of data
-				// pad_size: pad_size, add to packet
-				uint8_t *pad(uint8_t *data, uint16_t &length, uint8_t &pad_size)
+				// pad_size: pad_size
+				// Pads the data from left to right. no need to remove padding, just remove the first zero digits
+				uint8_t *pad(uint8_t *data, uint16_t &length)
 				{
-					uint8_t *dat;
-					uint16_t original_length = length;
-					pad_size = protocol.block_size - length % protocol.block_size;
-					length += pad_size;
-					dat = (uint8_t*)calloc(length, sizeof(uint8_t));
-					memcpy(dat, data, original_length);
-					delete[] data;
-					return dat;
+				    uint8_t *dat;
+					uint8_t pad_size;
+				    uint16_t original_length = length;
+				    pad_size = protocol.block_size - length % protocol.block_size;
+				    length += pad_size;
+				    dat = new uint8_t[length];
+				    // memcpy(&dat[pad_size], data, original_length); // for left to right padding
+				    memcpy(dat, data, original_length);				  // for right to left padding (append to end of message)
+					dat[length-1] = pad_size; // last digit of data is length
+				    delete[] data;
+				    return dat;
 				}
+
 	};
 }; /* namespace Cryptography */
 
@@ -404,7 +426,7 @@ namespace Cryptography
 // }
 
 // To use ProtocolData: Dont forget try catch for initializing them
-// protocol = ProtocolData(ECIES_ECDSA_AES256_CBC_SHA256);
+// protocol = ProtocolData(Secp256r1 + ECIES_ECDSA_AES256_CBC_SHA256);
 
 // To use Key:
 // k = Key(protocol);
@@ -422,10 +444,16 @@ namespace Cryptography
 // 		pad(plaintext, length, pad_size);
 // c.encrypt(cipher, plaintext, length, ciphertext, ciphertext_length);
 // delete[] ciphertext;
-// if pad_size == 0:
-// 		delete[] plaintext;
-// else
-// 		free(plaintext); 
+// delete[] plaintext;
+
+
+// ONCE RECEIVED
+// Once data is received, then, you have to remove padding, the thought is that the padding will be subtracted from the length of the message, the length is the first 8 bytes of data that is encrypted
+
+// no information is sent publicly, including the protocol used. the protocol used will be established using a puzzle. The puzzle is, considering that both parties (or more) know the secure key, adding the protocol number to the ecdsa signature then send it. Once received, the recipent has to try all possible protocols to come up with the right protocol.
+// for the recipent to know which is the correct protocol:
+// 	1. first sent network packet in a new communication requires:
+// 		* a random byte array that is encrypted is appended to the end of ciphertext/signature (with a public IV). Because the secret key used is known by the required parties, they can try all ciphers and once it gets a match, it will continue using that protocol. It is kind of a brute force method, but no one else can figure out either the key or the protocol used.
 
 /* This is AFTER PARSING the received message
  * Purpose of this class:
