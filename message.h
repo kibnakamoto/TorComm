@@ -1,11 +1,13 @@
 #ifndef MESSAGE_H
 #define MESSAGE_H
 
+#include <cryptopp/filters.h>
 #include <cstdlib>
 #include <functional>
 #include <string>
 #include <concepts>
 #include <stdlib.h>
+#include <utility>
 
 #include <cryptopp/cryptlib.h>
 #include <cryptopp/aes.h>
@@ -106,6 +108,19 @@ namespace Cryptography
 	class ProtocolData : public ErrorHandling
 	{
 		public:
+			// hash
+			boost::variant<CryptoPP::SHA256, CryptoPP::SHA512, ERRORS> hashf;
+
+			// encrypt
+			boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
+						   CryptoPP::GCM<CryptoPP::AES>::Encryption,      // aes gcm mode
+						   CryptoPP::ChaCha::Encryption>  cipherf;         // ChaCha20
+
+			// decrypt
+			boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption, // aes cbc mode
+						   CryptoPP::GCM<CryptoPP::AES>::Decryption,      // aes gcm mode
+						   CryptoPP::ChaCha::Encryption>                  // ChaCha20
+						   decipherf;
 
 			HashAlgorithm hash; // hashing algorithm used
 			CipherAlgorithm cipher; // cipher used
@@ -134,12 +149,16 @@ namespace Cryptography
 				// seperate protocol and curve
 				protocol = (CommunicationProtocol)(protocol_no - protocol_no % LAST);
 				curve = (Curves)(protocol_no % LAST);
-				init_cipher_data();
+
+				// initialize cipher and decipher object
+				auto cipher_data = init_cipher_data();
+				cipherf = cipher_data.first;
+				decipherf = cipher_data.second;
 
 				// if error caused: can only be ENCRYPTION_ALGORITHM_NOT_FOUND
 				error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND, error_handler_encryption_function_not_found, encryption_unexpected_error, get_time);
 
-				init_hash_data();
+				hashf = init_hash_data();
 				error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error, get_time);
 			}
 
@@ -154,8 +173,18 @@ namespace Cryptography
 				init_hash_data();
 				error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error, get_time);
 			}
+
+			uint8_t *generate_iv()
+			{
+					uint8_t *tmp = new uint8_t[iv_size];
+					CryptoPP::AutoSeededRandomPool rnd;
+					rnd.GenerateBlock(tmp, iv_size);
+					return tmp;
+			}
+
 			friend class Cipher;
 			friend class Key;
+			friend class Decipher;
 
 		private:
 			// error handler for hash function not found
@@ -174,7 +203,13 @@ namespace Cryptography
 					ProtocolData(default_communication_protocol+0);
 			};
 
-			void init_cipher_data()
+			std::pair <boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
+					   			   CryptoPP::GCM<CryptoPP::AES>::Encryption,      // aes gcm mode
+					   			   CryptoPP::ChaCha::Encryption>,                  // ChaCha20
+					   boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption, // aes cbc mode
+					   			   CryptoPP::GCM<CryptoPP::AES>::Decryption,      // aes gcm mode
+					   			   CryptoPP::ChaCha::Encryption> >                  // ChaCha20
+			 init_cipher_data()
 			{
 				ct_size=32;
 				if(communication_protocols[protocol].find("AES256") != std::string::npos) {
@@ -204,25 +239,113 @@ namespace Cryptography
 				// set cipher mode
 				if(communication_protocols[protocol].find("CBC") != std::string::npos) {
 					cipher_mode = CBC;
+					return std::make_pair(CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption(), CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption());
 				} else if(communication_protocols[protocol].find("GCM") != std::string::npos) {
 					cipher_mode = GCM;
-				} else {
+					return std::make_pair(CryptoPP::GCM<CryptoPP::AES>::Encryption(), CryptoPP::GCM<CryptoPP::AES>::Decryption());
+				} else { // e.g. CHACHA20
 					cipher_mode = NO_MODE;
+					return std::make_pair(CryptoPP::ChaCha::Encryption(), CryptoPP::ChaCha::Encryption());
 				}
 			}
 	
 			// get information about the hashing algorithm used
-			void init_hash_data()
+			// returns hashing algorithm if applicable
+			boost::variant<CryptoPP::SHA256, CryptoPP::SHA512, ERRORS>  init_hash_data()
 			{
 				if(communication_protocols[protocol].find("SHA256") != std::string::npos) {
 					hash = SHA256;
+					return CryptoPP::SHA256();
 				} else if(communication_protocols[protocol].find("SHA512") != std::string::npos) {
 					hash = SHA512;
+					return CryptoPP::SHA512();
 				} else {
 					error_code = HASHING_ALGORITHM_NOT_FOUND;
+					return error_code;
 				}
 			}
 
+		public:
+			// to get cipher: auto cipher = get_cipher();
+			boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption, // aes cbc mode
+						   CryptoPP::GCM<CryptoPP::AES>::Decryption,      // aes gcm mode
+						   CryptoPP::ChaCha::Encryption>                  // ChaCha20
+						   get_decipher()
+			{
+				switch(cipher) {
+					case AES256:
+					case AES192:
+					case AES128:
+						if(cipher_mode == CBC) {
+							return CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption();
+						} else if(cipher_mode == GCM) {
+							return CryptoPP::GCM<CryptoPP::AES>::Decryption();
+						}
+					case CHACHA20:
+						return CryptoPP::ChaCha::Encryption();
+					default:
+						error = ENCRYPTION_ALGORITHM_NOT_FOUND;
+						error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND,
+									 error_handler_encryption_function_not_found,
+									 encryption_unexpected_error, get_time);
+						get_cipher(); // try again
+				}
+			}
+
+			// to get cipher: auto cipher = get_cipher();
+			boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
+						   CryptoPP::GCM<CryptoPP::AES>::Encryption,      // aes gcm mode
+						   CryptoPP::ChaCha::Encryption>                  // ChaCha20
+						   get_cipher()
+			{
+				switch(cipher) {
+					case AES256:
+					case AES192:
+					case AES128:
+						if(cipher_mode == CBC) {
+							return CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption();
+						} else if(cipher_mode == GCM) {
+							return CryptoPP::GCM<CryptoPP::AES>::Encryption();
+						}
+					case CHACHA20:
+						return CryptoPP::ChaCha::Encryption();
+					default:
+						error = ENCRYPTION_ALGORITHM_NOT_FOUND;
+						error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND,
+									 error_handler_encryption_function_not_found,
+									 encryption_unexpected_error, get_time);
+						get_cipher(); // try again
+				}
+			}
+
+			// to get hash: auto hashf = get_hash();
+			boost::variant<CryptoPP::SHA256, CryptoPP::SHA512> get_hash()
+			{
+				switch(hash) {
+					case SHA256:
+						return CryptoPP::SHA256();
+					case SHA512:
+						return CryptoPP::SHA512();
+				}
+			}
+
+			// to get hash: auto hashf = get_hash();
+			// returns curve OID (Object ID)
+			CryptoPP::OID get_curve()
+			{
+				switch(curve) {
+					case SECP256K1:
+						return CryptoPP::ASN1::secp256k1();
+					case SECP256R1:
+						return CryptoPP::ASN1::secp256r1();
+					case SECP521R1:
+						return CryptoPP::ASN1::secp521r1();
+					case BRAINPOOL256R1:
+						return CryptoPP::ASN1::brainpoolP256r1();
+					case BRAINPOOL512R1:
+						return CryptoPP::ASN1::brainpoolP512r1();
+				}
+			}
 	};
 
 	// initialize key
@@ -306,42 +429,10 @@ namespace Cryptography
 		public:
 				
 
-				Cipher(ProtocolData &protocol, uint8_t *key, uint8_t *iv=nullptr) : protocol(protocol)
+				Cipher(ProtocolData &protocol, uint8_t *key, uint8_t *iv) : protocol(protocol)
 				{
 					this->key = key; // no need to destroy key since it's not allocated here.
-					if(iv != nullptr) {
-						this->iv = iv; // no need to destroy key since it's not allocated here.
-					} else {
-						// generate iv
-						CryptoPP::AutoSeededRandomPool rnd;
-						rnd.GenerateBlock(iv, protocol.iv_size);
-					}
-				}
-
-				// to get cipher: auto cipher = get_cipher();
-				boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
-							   CryptoPP::GCM<CryptoPP::AES>::Encryption,      // aes gcm mode
-							   CryptoPP::ChaCha::Encryption>                  // ChaCha20
-							   get_cipher()
-				{
-					switch(protocol.cipher) {
-						case AES256:
-						case AES192:
-						case AES128:
-							if(protocol.cipher_mode == CBC) {
-								return CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption();
-							} else if(protocol.cipher_mode == GCM) {
-								return CryptoPP::GCM<CryptoPP::AES>::Encryption();
-							}
-						case CHACHA20:
-							return CryptoPP::ChaCha::Encryption();
-						default:
-							error = ENCRYPTION_ALGORITHM_NOT_FOUND;
-							error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND,
-										 protocol.error_handler_encryption_function_not_found,
-										 encryption_unexpected_error, get_time);
-							get_cipher(); // try again
-					}
+					this->iv = iv; // no need to destroy key since it's not allocated here.
 				}
 
 				// set key with iv
@@ -352,21 +443,46 @@ namespace Cryptography
 
 				// https://stackoverflow.com/questions/42817362/encrypt-decrypt-byte-array-crypto#42820221
 
-				// cipher: output of get_cipher()
+				// cipher: output of protocol.get_cipher()
 				// data: string, or uint8_t ptr, or buffer, etc. Plaintext
-				// length: data length, the send packet length. if 1GB image, it would be IMAGE_BUFFER_SIZE, if last packet, it would be whatever is left, that one needs to be padded
+				// length: data length, the send packet length. if 1GB image, it would be IMAGE_BUFFER_SIZE, if last packet. has to be padded to be a multiple of protocol.block_size.
 				// ct: ciphertext
 				// ct_len: ciphertext length
-				void encrypt(auto cipher, auto data, uint16_t length, uint8_t *ct, uint16_t ct_len)
+				void encrypt(auto cipher, auto data, uint16_t length, uint8_t *ct, uint16_t &ct_len)
 				{
 						uint8_t *pt; // padding assumed to be done, use the pad function for padding
-						ct = new uint8_t[length+protocol.iv_size];
 
 						// data has to be uint8_t*
-						if constexpr(!std::is_same<decltype(data), uint8_t*>())
-							pt = to_uint8_ptr(data);
+						pt = to_uint8_ptr(data);
 
-						
+						// check the encryption types
+						switch(protocol.cipher) {
+							case CHACHA20:
+								ct_len = length;
+								ct = new uint8_t[ct_len];
+					 			cipher.ProcessData((uint8_t*)&ct[0], (const uint8_t*)pt, length);
+								break;
+							case AES256:
+							case AES192:
+							case AES128:
+								ct_len = length<<1;
+								ct = new uint8_t[ct_len];
+								CryptoPP::StreamTransformationFilter filter(cipher, new CryptoPP::ArraySink(ct, ct_len));
+								filter.Put(pt, length);
+  								filter.MessageEnd();
+								break;
+						}
+				}
+
+				// this assumes that the ciphertext length is given as well as ct memory is allocated
+				// this should be used if encrypting data segments of the same length many times so that it doesn't reallocate and instead reuses ciphertext
+				void encrypt(auto cipher, auto data, uint16_t length, uint16_t ct_len, uint8_t *ct)
+				{
+						uint8_t *pt; // padding assumed to be done, use the pad function for padding
+
+						// data has to be uint8_t*
+						pt = to_uint8_ptr(data);
+
 						// check the encryption types
 						switch(protocol.cipher) {
 							case CHACHA20:
@@ -375,14 +491,16 @@ namespace Cryptography
 							case AES256:
 							case AES192:
 							case AES128:
-								// encrypt
+								CryptoPP::StreamTransformationFilter filter(cipher, new CryptoPP::ArraySink(ct, ct_len));
+								filter.Put(pt, length);
+  								filter.MessageEnd();
 								break;
 						}
-						memcpy((ct+length), iv, protocol.iv_size);
 				}
 
+
 				// to convert strings and boost buffers to uint8_t*
-				static uint8_t *to_uint8_ptr(auto data)
+				static constexpr uint8_t *to_uint8_ptr(auto data)
 				{
 					if constexpr(std::is_same<decltype(data), std::string>()) {
 						return data.c_str();
@@ -405,7 +523,10 @@ namespace Cryptography
 				    uint8_t *dat;
 					uint8_t pad_size;
 				    uint16_t original_length = length;
-				    pad_size = protocol.block_size - length % protocol.block_size;
+					uint16_t mod = length % protocol.block_size;
+				    pad_size = protocol.block_size - mod;
+					if(mod == 0) // if 32-byte unpadded, then pad_size=0, if zero, than dat[length-1] = pad_size would modify the plaintext
+						pad_size += protocol.block_size;
 				    length += pad_size;
 				    dat = new uint8_t[length];
 				    // memcpy(&dat[pad_size], data, original_length); // for left to right padding
@@ -416,6 +537,104 @@ namespace Cryptography
 				}
 
 	};
+
+	// encryption
+	class Decipher : public ErrorHandling
+	{
+		ProtocolData protocol;
+		uint8_t *key; // key length is protocol.key_size
+		uint8_t *iv; // iv length is protocol.iv_size
+		public:
+
+			Decipher(ProtocolData &protocol, uint8_t *key, uint8_t *iv) : protocol(protocol)
+			{
+				this->key = key; // no need to destroy key since it's not allocated here.
+				this->iv = iv; // no need to destroy key since it's not allocated here.
+			}
+
+			// cipher: output of protocol.get_decipher()
+			// ct: ciphertext
+			// ct_len: ciphertext length
+			// data: plaintext
+			// length: data length, the send packet length. if 1GB image, it would be IMAGE_BUFFER_SIZE, if last packet. has to be padded to be a multiple of protocol.block_size.
+			// decrypts data, doesn't remove padding
+			void decrypt(auto cipher, auto ct, uint16_t &ct_len, uint8_t *pt, uint16_t length)
+			{
+					uint8_t *data;
+
+					// data has to be uint8_t*
+					data = Cipher::to_uint8_ptr(ct);
+
+					// check the encryption types
+					switch(protocol.cipher) {
+						case CHACHA20:
+							length = ct_len;
+							pt = new uint8_t[length];
+				 			cipher.ProcessData(&pt[0], (const uint8_t*)data, length);
+							break;
+						case AES256:
+						case AES192:
+						case AES128:
+							length = ct_len>>1;
+							pt = new uint8_t[length];
+							CryptoPP::StreamTransformationFilter filter(cipher, new CryptoPP::ArraySink(pt, length));
+							filter.Put(ct, ct_len);
+  							filter.MessageEnd();
+							break;
+					}
+			}
+			
+			// set key with iv
+			void set_key(auto cipher)
+			{
+				cipher.setKeyWithIv(key, protocol.key_size, iv, protocol.iv_size);
+			}
+
+			// remove padding
+			// the last value of data is pad size to remove
+			// keep the pad size from the original length. delete it accordingly
+			// to delete:
+			//		delete[] (data-pad_size);
+			// data: decrypted padded data
+			// length: length of padded data
+			// return: pad size
+			uint8_t unpad(uint8_t *&data, uint16_t &length)
+			{
+    			uint8_t pad_size = data[0];
+    			length -= pad_size;
+
+				// realloc
+				uint8_t *new_data = new uint8_t[length];
+				memcpy(new_data, &data[pad_size], length);
+				delete[] data;
+				data = new_data;
+
+				return pad_size;
+			}
+	};
+
+
+	// Elliptic Cryptography Digital Signature Algorithm
+	class Ecdsa : public ErrorHandling
+	{
+		ERRORS error = NO_ERROR;
+		ProtocolData protocol;
+
+		Ecdsa(ProtocolData &protocol) : protocol(protocol)
+		{
+		}
+
+		bool verify()
+		{
+			CryptoPP::AutoSeededRandomPool prng;
+			CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::PrivateKey private_key;
+			
+			private_key.Initialize(prng, CryptoPP::ASN1::secp256k1());
+			bool valid = private_key.Validate(prng, 3);
+			return valid;
+		}
+	};
+	// TODO: find a way to secure communication protocol by secritizing some aspects of it
 }; /* namespace Cryptography */
 
 // TODO: remember to error handle using
@@ -428,23 +647,40 @@ namespace Cryptography
 // To use ProtocolData: Dont forget try catch for initializing them
 // protocol = ProtocolData(Secp256r1 + ECIES_ECDSA_AES256_CBC_SHA256);
 
+////////////// KEY
 // To use Key:
 // k = Key(protocol);
 // k.multiply(bobs_key)
 // key = k.hkdf();
 
+////////////// CIPHER
 // To use Cipher:
 // c = Cipher(protocol, key, iv);
 // auto cipher = c.get_cipher();
 // c.set_key(cipher);
-
-// if plaintext type != uint8_t*:
-// 		to_uint8_ptr(plaintext);
+// plaintext = to_uint8_ptr(plaintext_with_non_uint8_type);
 // if length % protocol.block_size != 0:
-// 		pad(plaintext, length, pad_size);
+// 		c.pad(plaintext, length);
+// 	encrypt option 1:
 // c.encrypt(cipher, plaintext, length, ciphertext, ciphertext_length);
 // delete[] ciphertext;
+// encrypt option 2:
+// ciphertext = new uint8_t[ciphertext_length]
+// c.encrypt(cipher, plaintext, length, ciphertext_length, ciphertext);
+// delete[] ciphertext;
 // delete[] plaintext;
+
+////////////// DECIPHER
+// To use Decipher:
+// d = Decipher(protocol, key, iv);
+// auto cipher = d.get_cipher();
+// d.set_key(cipher);
+// decrypt(cipher, ciphertext, ciphertext_length, plaintext, length);
+// pad_size = d.unpad(plaintext, length);
+// delete[] (plaintext-pad_size);
+// delete[] ciphertext;
+//
+
 
 
 // ONCE RECEIVED
