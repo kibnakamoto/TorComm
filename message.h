@@ -109,7 +109,7 @@ namespace Cryptography
 	{
 		public:
 			// hash
-			boost::variant<CryptoPP::SHA256, CryptoPP::SHA512, ERRORS> hashf;
+			boost::variant<CryptoPP::SHA256, CryptoPP::SHA512> hashf;
 
 			// encrypt
 			boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
@@ -151,14 +151,12 @@ namespace Cryptography
 				curve = (Curves)(protocol_no % LAST);
 
 				// initialize cipher and decipher object
-				auto cipher_data = init_cipher_data();
-				cipherf = cipher_data.first;
-				decipherf = cipher_data.second;
+				init_cipher_data();
 
 				// if error caused: can only be ENCRYPTION_ALGORITHM_NOT_FOUND
 				error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND, error_handler_encryption_function_not_found, encryption_unexpected_error, get_time);
 
-				hashf = init_hash_data();
+				init_hash_data();
 				error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error, get_time);
 			}
 
@@ -182,9 +180,6 @@ namespace Cryptography
 					return tmp;
 			}
 
-			friend class Cipher;
-			friend class Key;
-			friend class Decipher;
 
 		private:
 			// error handler for hash function not found
@@ -203,13 +198,7 @@ namespace Cryptography
 					ProtocolData(default_communication_protocol+0);
 			};
 
-			std::pair <boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
-					   			   CryptoPP::GCM<CryptoPP::AES>::Encryption,      // aes gcm mode
-					   			   CryptoPP::ChaCha::Encryption>,                  // ChaCha20
-					   boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption, // aes cbc mode
-					   			   CryptoPP::GCM<CryptoPP::AES>::Decryption,      // aes gcm mode
-					   			   CryptoPP::ChaCha::Encryption> >                  // ChaCha20
-			 init_cipher_data()
+			void init_cipher_data()
 			{
 				ct_size=32;
 				if(communication_protocols[protocol].find("AES256") != std::string::npos) {
@@ -239,29 +228,31 @@ namespace Cryptography
 				// set cipher mode
 				if(communication_protocols[protocol].find("CBC") != std::string::npos) {
 					cipher_mode = CBC;
-					return std::make_pair(CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption(), CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption());
+					cipherf = CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption();
+					decipherf = CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption();
 				} else if(communication_protocols[protocol].find("GCM") != std::string::npos) {
 					cipher_mode = GCM;
-					return std::make_pair(CryptoPP::GCM<CryptoPP::AES>::Encryption(), CryptoPP::GCM<CryptoPP::AES>::Decryption());
+					cipherf = CryptoPP::GCM<CryptoPP::AES>::Encryption();
+					decipherf = CryptoPP::GCM<CryptoPP::AES>::Decryption();
 				} else { // e.g. CHACHA20
 					cipher_mode = NO_MODE;
-					return std::make_pair(CryptoPP::ChaCha::Encryption(), CryptoPP::ChaCha::Encryption());
+					cipherf = CryptoPP::ChaCha::Encryption();
+					decipherf = CryptoPP::ChaCha::Encryption();
 				}
 			}
 	
 			// get information about the hashing algorithm used
 			// returns hashing algorithm if applicable
-			boost::variant<CryptoPP::SHA256, CryptoPP::SHA512, ERRORS>  init_hash_data()
+			void init_hash_data()
 			{
 				if(communication_protocols[protocol].find("SHA256") != std::string::npos) {
 					hash = SHA256;
-					return CryptoPP::SHA256();
+					hashf = CryptoPP::SHA256();
 				} else if(communication_protocols[protocol].find("SHA512") != std::string::npos) {
 					hash = SHA512;
-					return CryptoPP::SHA512();
+					hashf = CryptoPP::SHA512();
 				} else {
 					error_code = HASHING_ALGORITHM_NOT_FOUND;
-					return error_code;
 				}
 			}
 
@@ -619,19 +610,15 @@ namespace Cryptography
 	{
 		ERRORS error = NO_ERROR;
 		ProtocolData protocol;
+		Key key;
 
-		Ecdsa(ProtocolData &protocol) : protocol(protocol)
+		Ecdsa(ProtocolData &protocol, Key key) : protocol(protocol), key(key)
 		{
 		}
 
 		bool verify()
 		{
-			CryptoPP::AutoSeededRandomPool prng;
-			CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::PrivateKey private_key;
-			
-			private_key.Initialize(prng, CryptoPP::ASN1::secp256k1());
-			bool valid = private_key.Validate(prng, 3);
-			return valid;
+			return 0;
 		}
 	};
 	// TODO: find a way to secure communication protocol by secritizing some aspects of it
