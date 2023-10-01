@@ -8,6 +8,7 @@
 #include <concepts>
 #include <stdlib.h>
 #include <utility>
+#include <variant>
 
 #include <cryptopp/cryptlib.h>
 #include <cryptopp/aes.h>
@@ -21,7 +22,6 @@
 #include <cryptopp/gcm.h>
 #include <cryptopp/chacha.h>
 
-#include <boost/variant/variant.hpp>
 #include <boost/asio/buffer.hpp>
 
 #include <jsoncpp/json/json.h>
@@ -109,15 +109,15 @@ namespace Cryptography
 	{
 		public:
 			// hash
-			boost::variant<CryptoPP::SHA256, CryptoPP::SHA512> hashf;
+			std::variant<CryptoPP::SHA256, CryptoPP::SHA512> hashf;
 
 			// encrypt
-			boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
+			std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
 						   CryptoPP::GCM<CryptoPP::AES>::Encryption,      // aes gcm mode
 						   CryptoPP::ChaCha::Encryption>  cipherf;         // ChaCha20
 
 			// decrypt
-			boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption, // aes cbc mode
+			std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption, // aes cbc mode
 						   CryptoPP::GCM<CryptoPP::AES>::Decryption,      // aes gcm mode
 						   CryptoPP::ChaCha::Encryption>                  // ChaCha20
 						   decipherf;
@@ -258,7 +258,7 @@ namespace Cryptography
 
 		public:
 			// to get cipher: auto cipher = get_cipher();
-			boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption, // aes cbc mode
+			std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption, // aes cbc mode
 						   CryptoPP::GCM<CryptoPP::AES>::Decryption,      // aes gcm mode
 						   CryptoPP::ChaCha::Encryption>                  // ChaCha20
 						   get_decipher()
@@ -276,15 +276,11 @@ namespace Cryptography
 						return CryptoPP::ChaCha::Encryption();
 					default:
 						error = ENCRYPTION_ALGORITHM_NOT_FOUND;
-						error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND,
-									 error_handler_encryption_function_not_found,
-									 encryption_unexpected_error, get_time);
-						get_cipher(); // try again
 				}
 			}
 
 			// to get cipher: auto cipher = get_cipher();
-			boost::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
+			std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
 						   CryptoPP::GCM<CryptoPP::AES>::Encryption,      // aes gcm mode
 						   CryptoPP::ChaCha::Encryption>                  // ChaCha20
 						   get_cipher()
@@ -302,15 +298,11 @@ namespace Cryptography
 						return CryptoPP::ChaCha::Encryption();
 					default:
 						error = ENCRYPTION_ALGORITHM_NOT_FOUND;
-						error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND,
-									 error_handler_encryption_function_not_found,
-									 encryption_unexpected_error, get_time);
-						get_cipher(); // try again
 				}
 			}
 
 			// to get hash: auto hashf = get_hash();
-			boost::variant<CryptoPP::SHA256, CryptoPP::SHA512> get_hash()
+			std::variant<CryptoPP::SHA256, CryptoPP::SHA512> get_hash()
 			{
 				switch(hash) {
 					case SHA256:
@@ -417,6 +409,50 @@ namespace Cryptography
 		ProtocolData protocol;
 		uint8_t *key; // key length is protocol.key_size
 		uint8_t *iv; // iv length is protocol.iv_size
+
+		struct Encryptor
+		{
+			uint8_t *plaintext;
+			uint8_t *ciphertext;
+			uint16_t plaintext_length;
+			uint16_t ciphertext_length;
+			bool init=false;
+
+			void operator()(CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption &enc)
+			{
+				if(!init) {
+					ciphertext_length = plaintext_length<<1;
+					ciphertext = new uint8_t[ciphertext_length];
+				}
+				CryptoPP::StreamTransformationFilter filter(enc, new CryptoPP::ArraySink(ciphertext, ciphertext_length));
+				filter.Put(plaintext, plaintext_length);
+  				filter.MessageEnd();
+				init = true;
+			}
+
+			void operator()(CryptoPP::GCM<CryptoPP::AES>::Encryption &enc)
+			{
+				if(!init) {
+					ciphertext_length = plaintext_length<<1;
+					ciphertext = new uint8_t[ciphertext_length];
+				}
+				CryptoPP::StreamTransformationFilter filter(enc, new CryptoPP::ArraySink(ciphertext, ciphertext_length));
+				filter.Put(plaintext, plaintext_length);
+  				filter.MessageEnd();
+				init = true;
+			}
+
+			void operator()(CryptoPP::ChaCha::Encryption &enc)
+			{
+				if(!init) {
+					ciphertext_length = plaintext_length;
+					ciphertext = new uint8_t[ciphertext_length];
+				}
+				enc.ProcessData((uint8_t*)&ciphertext[0], (const uint8_t*)plaintext, plaintext_length);
+				init = true;
+			}
+		};
+
 		public:
 				
 
@@ -439,7 +475,8 @@ namespace Cryptography
 				// length: data length, the send packet length. if 1GB image, it would be IMAGE_BUFFER_SIZE, if last packet. has to be padded to be a multiple of protocol.block_size.
 				// ct: ciphertext
 				// ct_len: ciphertext length
-				void encrypt(auto cipher, auto data, uint16_t length, uint8_t *ct, uint16_t &ct_len)
+				// mem_allocated: if memory is allocated, don't reallocate
+				void encrypt(auto data, uint16_t length, uint8_t *ct, uint16_t &ct_len, bool &is_ct_allocated)
 				{
 						uint8_t *pt; // padding assumed to be done, use the pad function for padding
 
@@ -447,48 +484,32 @@ namespace Cryptography
 						pt = to_uint8_ptr(data);
 
 						// check the encryption types
-						switch(protocol.cipher) {
-							case CHACHA20:
-								ct_len = length;
-								ct = new uint8_t[ct_len];
-					 			cipher.ProcessData((uint8_t*)&ct[0], (const uint8_t*)pt, length);
-								break;
-							case AES256:
-							case AES192:
-							case AES128:
-								ct_len = length<<1;
-								ct = new uint8_t[ct_len];
-								CryptoPP::StreamTransformationFilter filter(cipher, new CryptoPP::ArraySink(ct, ct_len));
-								filter.Put(pt, length);
-  								filter.MessageEnd();
-								break;
-						}
+						Encryptor encryptor = Encryptor();
+						encryptor.ciphertext = ct;
+						encryptor.plaintext = pt;
+						encryptor.ciphertext_length = ct_len;
+						encryptor.plaintext_length = length;
+						encryptor.init = is_ct_allocated;
+						std::visit(encryptor, protocol.cipherf);
+
+						//switch(protocol.cipher) {
+						//	case CHACHA20:
+						//		ct_len = length;
+						//		ct = new uint8_t[ct_len];
+						//		cipher.ProcessData((uint8_t*)&ct[0], (const uint8_t*)pt, length);
+						//		//protocol.cipherf.ProcessData((uint8_t*)&ct[0], (const uint8_t*)pt, length);
+						//		break;
+						//	case AES256:
+						//	case AES192:
+						//	case AES128:
+						//		ct_len = length<<1;
+						//		ct = new uint8_t[ct_len];
+						//		CryptoPP::StreamTransformationFilter filter(cipher, new CryptoPP::ArraySink(ct, ct_len));
+						//		filter.Put(pt, length);
+  						//		filter.MessageEnd();
+						//		break;
+						//}
 				}
-
-				// this assumes that the ciphertext length is given as well as ct memory is allocated
-				// this should be used if encrypting data segments of the same length many times so that it doesn't reallocate and instead reuses ciphertext
-				void encrypt(auto cipher, auto data, uint16_t length, uint16_t ct_len, uint8_t *ct)
-				{
-						uint8_t *pt; // padding assumed to be done, use the pad function for padding
-
-						// data has to be uint8_t*
-						pt = to_uint8_ptr(data);
-
-						// check the encryption types
-						switch(protocol.cipher) {
-							case CHACHA20:
-					 			cipher.ProcessData((uint8_t*)&ct[0], (const uint8_t*)pt, length);
-								break;
-							case AES256:
-							case AES192:
-							case AES128:
-								CryptoPP::StreamTransformationFilter filter(cipher, new CryptoPP::ArraySink(ct, ct_len));
-								filter.Put(pt, length);
-  								filter.MessageEnd();
-								break;
-						}
-				}
-
 
 				// to convert strings and boost buffers to uint8_t*
 				static constexpr uint8_t *to_uint8_ptr(auto data)
@@ -535,6 +556,49 @@ namespace Cryptography
 		ProtocolData protocol;
 		uint8_t *key; // key length is protocol.key_size
 		uint8_t *iv; // iv length is protocol.iv_size
+		
+		struct Decryptor
+		{
+			uint8_t *plaintext;
+			uint8_t *ciphertext;
+			uint16_t plaintext_length;
+			uint16_t ciphertext_length;
+			bool init = false; // is memory allocated
+
+			// check the encryption types
+			void operator()(CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption &dec)
+			{
+				if(!init) {
+					plaintext_length = ciphertext_length>>1;
+					plaintext = new uint8_t[plaintext_length];
+				}
+				CryptoPP::StreamTransformationFilter filter(dec, new CryptoPP::ArraySink(plaintext, plaintext_length));
+				filter.Put(ciphertext, ciphertext_length);
+  				filter.MessageEnd();
+				init = true;
+			}
+
+			void operator()(CryptoPP::GCM<CryptoPP::AES>::Decryption &dec)
+			{
+				if(!init) {
+					plaintext_length = ciphertext_length>>1;
+					plaintext = new uint8_t[plaintext_length];
+				}
+				CryptoPP::StreamTransformationFilter filter(dec, new CryptoPP::ArraySink(plaintext, plaintext_length));
+				init = true;
+			}
+
+			void operator()(CryptoPP::ChaCha::Encryption &dec)
+			{
+				if(!init) {
+					plaintext_length = ciphertext_length;
+					plaintext = new uint8_t[plaintext_length];
+				}
+				dec.ProcessData(&plaintext[0], (const uint8_t*)ciphertext, ciphertext_length);
+				init = true;
+			}
+		};
+
 		public:
 
 			Decipher(ProtocolData &protocol, uint8_t *key, uint8_t *iv) : protocol(protocol)
@@ -549,30 +613,38 @@ namespace Cryptography
 			// data: plaintext
 			// length: data length, the send packet length. if 1GB image, it would be IMAGE_BUFFER_SIZE, if last packet. has to be padded to be a multiple of protocol.block_size.
 			// decrypts data, doesn't remove padding
-			void decrypt(auto cipher, auto ct, uint16_t &ct_len, uint8_t *pt, uint16_t length)
+			void decrypt(auto ct, uint16_t &ct_len, uint8_t *pt, uint16_t &length, bool &is_pt_allocated)
 			{
 					uint8_t *data;
 
 					// data has to be uint8_t*
 					data = Cipher::to_uint8_ptr(ct);
 
+					Decryptor decryptor = Decryptor();
+					decryptor.ciphertext = ct;
+					decryptor.plaintext = pt;
+					decryptor.ciphertext_length = ct_len;
+					decryptor.plaintext_length = length;
+					decryptor.init = is_pt_allocated;
+					std::visit(decryptor, protocol.decipherf);
+
 					// check the encryption types
-					switch(protocol.cipher) {
-						case CHACHA20:
-							length = ct_len;
-							pt = new uint8_t[length];
-				 			cipher.ProcessData(&pt[0], (const uint8_t*)data, length);
-							break;
-						case AES256:
-						case AES192:
-						case AES128:
-							length = ct_len>>1;
-							pt = new uint8_t[length];
-							CryptoPP::StreamTransformationFilter filter(cipher, new CryptoPP::ArraySink(pt, length));
-							filter.Put(ct, ct_len);
-  							filter.MessageEnd();
-							break;
-					}
+					// switch(protocol.cipher) {
+					// 	case CHACHA20:
+					// 		length = ct_len;
+					// 		pt = new uint8_t[length];
+				 	// 		cipher.ProcessData(&pt[0], (const uint8_t*)data, length);
+					// 		break;
+					// 	case AES256:
+					// 	case AES192:
+					// 	case AES128:
+					// 		length = ct_len>>1;
+					// 		pt = new uint8_t[length];
+					// 		CryptoPP::StreamTransformationFilter filter(cipher, new CryptoPP::ArraySink(pt, length));
+					// 		filter.Put(ct, ct_len);
+  					// 		filter.MessageEnd();
+					// 		break;
+					// }
 			}
 			
 			// set key with iv
@@ -614,10 +686,12 @@ namespace Cryptography
 
 		Ecdsa(ProtocolData &protocol, Key key) : protocol(protocol), key(key)
 		{
+			
 		}
 
 		bool verify()
 		{
+			//CryptoPP::ECDSA<CryptoPP::ECP, protocol.get_hash()>::PrivateKey private_key;
 			return 0;
 		}
 	};
