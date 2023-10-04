@@ -2,6 +2,7 @@
 #define MESSAGE_H
 
 #include <cryptopp/filters.h>
+#include <cryptopp/pubkey.h>
 #include <cstdlib>
 #include <functional>
 #include <string>
@@ -31,6 +32,16 @@
 
 // get current time
 std::string get_time();
+
+// for operators in Encryptor
+template<typename T>
+concept AesEncryptor = requires(T t)
+{
+	{
+		(std::same_as<T, CryptoPP::GCM<CryptoPP::AES>::Encryption> || 
+		std::same_as<T, CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption>)
+	};
+};
 
 // pt: plaintext
 // key: encryption key
@@ -126,6 +137,7 @@ namespace Cryptography
 			CipherAlgorithm cipher; // cipher used
 			CipherMode cipher_mode; // cipher mode
 			Curves curve; // Elliptic curve used
+			CryptoPP::OID curve_oid;
 			CommunicationProtocol protocol; // not full communication protocol used, doesn't include elliptic curve used
 			uint16_t iv_size;
 			uint16_t key_size;
@@ -155,6 +167,8 @@ namespace Cryptography
 
 				// if error caused: can only be ENCRYPTION_ALGORITHM_NOT_FOUND
 				error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND, error_handler_encryption_function_not_found, encryption_unexpected_error, get_time);
+
+				curve_oid = get_curve();
 
 				init_hash_data();
 				error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error, get_time);
@@ -312,7 +326,7 @@ namespace Cryptography
 				}
 			}
 
-			// to get hash: auto hashf = get_hash();
+			// to get hash: auto hashf = get_curve();
 			// returns curve OID (Object ID)
 			CryptoPP::OID get_curve()
 			{
@@ -334,10 +348,10 @@ namespace Cryptography
 	// initialize key
 	class Key : public ErrorHandling
 	{
-		CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP> group;
 		ProtocolData protocol;
 
 		public:
+				CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP> group;
 				CryptoPP::Integer private_key;
 				CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element public_key;
 				uint8_t *key; // established key
@@ -382,6 +396,30 @@ namespace Cryptography
 					delete[] key;
 				}
 
+				// convert public key to uint8_t*
+				static void integer_to_bytes(CryptoPP::Integer num, uint8_t *&bytes, uint16_t &bytes_len)
+				{
+					bytes_len = num.MinEncodedSize(CryptoPP::Integer::UNSIGNED);
+					bytes = new uint8_t[bytes_len];
+					num.Encode((uint8_t*)&bytes[0], bytes_len, CryptoPP::Integer::UNSIGNED);
+				}
+
+				static CryptoPP::Integer bytes_to_integer(uint8_t *&bytes, uint16_t &bytes_len)
+				{
+					CryptoPP::Integer x;
+					x.Decode(bytes, bytes_len);
+					return x;
+				}
+
+				inline static CryptoPP::ECPPoint reconstruct_point_from_bytes(uint8_t *public_key_x,
+																			  uint16_t public_key_x_len,
+																			  uint8_t *public_key_y,
+																			  uint16_t public_key_y_len)
+				{
+					return CryptoPP::ECPPoint(Key::bytes_to_integer(public_key_x, public_key_x_len),
+											  Key::bytes_to_integer(public_key_y, public_key_y_len));
+				}
+
 				// bob's public key is multiplied with alice's to generate the ECDH key.
 				inline CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element multiply(CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k)
 				{
@@ -403,6 +441,8 @@ namespace Cryptography
 				}
 	};
 
+
+
 	// encryption
 	class Cipher : public ErrorHandling
 	{
@@ -418,7 +458,8 @@ namespace Cryptography
 			uint16_t ciphertext_length;
 			bool init=false;
 
-			void operator()(CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption &enc)
+			//void operator()(CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption &enc)
+			void operator()(AesEncryptor auto &enc) // add the requirement of AesEncryptor
 			{
 				if(!init) {
 					ciphertext_length = plaintext_length<<1;
@@ -430,17 +471,7 @@ namespace Cryptography
 				init = true;
 			}
 
-			void operator()(CryptoPP::GCM<CryptoPP::AES>::Encryption &enc)
-			{
-				if(!init) {
-					ciphertext_length = plaintext_length<<1;
-					ciphertext = new uint8_t[ciphertext_length];
-				}
-				CryptoPP::StreamTransformationFilter filter(enc, new CryptoPP::ArraySink(ciphertext, ciphertext_length));
-				filter.Put(plaintext, plaintext_length);
-  				filter.MessageEnd();
-				init = true;
-			}
+			// void operator()(CryptoPP::GCM<CryptoPP::AES>::Encryption &enc) // same function definition above if concept doesn't work
 
 			void operator()(CryptoPP::ChaCha::Encryption &enc)
 			{
@@ -452,6 +483,7 @@ namespace Cryptography
 				init = true;
 			}
 		};
+		Encryptor encryptor = Encryptor();
 
 		public:
 				
@@ -476,7 +508,7 @@ namespace Cryptography
 				// ct: ciphertext
 				// ct_len: ciphertext length
 				// mem_allocated: if memory is allocated, don't reallocate
-				void encrypt(auto data, uint16_t length, uint8_t *ct, uint16_t &ct_len, bool &is_ct_allocated)
+				void encrypt(auto &data, uint16_t length, uint8_t *&ct, uint16_t &ct_len, bool &is_ct_allocated)
 				{
 						uint8_t *pt; // padding assumed to be done, use the pad function for padding
 
@@ -484,7 +516,6 @@ namespace Cryptography
 						pt = to_uint8_ptr(data);
 
 						// check the encryption types
-						Encryptor encryptor = Encryptor();
 						encryptor.ciphertext = ct;
 						encryptor.plaintext = pt;
 						encryptor.ciphertext_length = ct_len;
@@ -550,7 +581,7 @@ namespace Cryptography
 
 	};
 
-	// encryption
+	// Decryption
 	class Decipher : public ErrorHandling
 	{
 		ProtocolData protocol;
@@ -598,6 +629,7 @@ namespace Cryptography
 				init = true;
 			}
 		};
+		Decryptor decryptor = Decryptor();
 
 		public:
 
@@ -613,14 +645,13 @@ namespace Cryptography
 			// data: plaintext
 			// length: data length, the send packet length. if 1GB image, it would be IMAGE_BUFFER_SIZE, if last packet. has to be padded to be a multiple of protocol.block_size.
 			// decrypts data, doesn't remove padding
-			void decrypt(auto ct, uint16_t &ct_len, uint8_t *pt, uint16_t &length, bool &is_pt_allocated)
+			void decrypt(auto &ct, uint16_t ct_len, uint8_t *&pt, uint16_t &length, bool &is_pt_allocated)
 			{
 					uint8_t *data;
 
 					// data has to be uint8_t*
 					data = Cipher::to_uint8_ptr(ct);
 
-					Decryptor decryptor = Decryptor();
 					decryptor.ciphertext = ct;
 					decryptor.plaintext = pt;
 					decryptor.ciphertext_length = ct_len;
@@ -683,16 +714,82 @@ namespace Cryptography
 		ERRORS error = NO_ERROR;
 		ProtocolData protocol;
 		Key key;
+		CryptoPP::AutoSeededRandomPool prng;
 
-		Ecdsa(ProtocolData &protocol, Key key) : protocol(protocol), key(key)
+		// initialize signer
+		void signer_init(auto signer, std::vector<uint8_t> &signature, uint8_t *msg, uint16_t msg_len, CryptoPP::OID oid)
 		{
-			
+			signer.AccessKey().Initialize(oid, key.private_key);
+			CryptoPP::StringSource s(msg, msg_len, true,
+		    						 new CryptoPP::SignerFilter(prng,
+											 		  			signer,
+													  			new CryptoPP::VectorSink(signature)));
 		}
 
-		bool verify()
+		public:
+
+		// msg: message as the data segment. If image, msg_len is IMAGE_BUFFER_SIZE
+		// msg_len: length of msg
+		Ecdsa(ProtocolData &protocol, Key key) : protocol(protocol), key(key) {}
+
+		std::vector<uint8_t> sign(uint8_t *msg, uint16_t msg_len)
 		{
-			//CryptoPP::ECDSA<CryptoPP::ECP, protocol.get_hash()>::PrivateKey private_key;
-			return 0;
+			std::vector<uint8_t> signature;
+			if(protocol.hash == SHA256) {
+				CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::Signer signer;
+				signer_init(signer, signature, msg, msg_len, protocol.curve_oid);
+			} else if(protocol.hash == SHA512) {
+				CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::Signer signer;
+				signer_init(signer, signature, msg, msg_len, protocol.curve_oid);
+			} else {
+				error = HASHING_ALGORITHM_NOT_FOUND;
+			}
+			return signature;
+		}
+			
+
+		// public key is received as bytes. Convert to ECPoint using: Key::reconstruct_point_from_bytes
+		bool verify(uint8_t *msg, uint16_t msg_len, uint8_t *&signature, uint16_t signature_len,
+					CryptoPP::ECPPoint public_key)
+		{
+			bool verified;
+			if(protocol.hash == SHA256) {
+				CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::PublicKey public_k;
+	    		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::Verifier verifier(public_k);
+				public_k.Initialize(protocol.curve_oid, public_key);
+    			verified = verifier.VerifyMessage(&msg[0], msg_len, &signature[0], signature_len);
+			} else if(protocol.hash == SHA512) {
+				CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::PublicKey public_k;
+				public_k.Initialize(protocol.curve_oid, public_key);
+	    		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::Verifier verifier(public_k);
+    			verified = verifier.VerifyMessage(&msg[0], msg_len, &signature[0], signature_len);
+			}
+
+			return verified;
+		}
+
+		// returns the length of out buffer, gets the compressed x value with the 03 starting byte
+		template<class HashAlg>
+		inline static uint16_t get_compressed(CryptoPP::ECDSA<CryptoPP::ECP, HashAlg> &public_key, uint8_t *out_buffer)
+		{
+			CryptoPP::Integer x = public_key.GetPublicElement().x;
+			uint16_t bytes_len = x.MinEncodedSize(CryptoPP::Integer::UNSIGNED);
+			out_buffer = new uint8_t[bytes_len+1];
+			x.Encode((uint8_t*)&out_buffer[1], bytes_len, CryptoPP::Integer::UNSIGNED);
+			out_buffer[0] = 0x03;
+			bytes_len++;
+			return bytes_len;
+		}
+
+		// public_key: 03 concatinated with x-coordinate of the public key
+		template<class HashAlg>
+		inline static CryptoPP::ECDSA<CryptoPP::ECP, HashAlg> get_decompressed(uint8_t *public_key, uint16_t public_key_len)
+		{
+			CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::PublicKey public_k;
+			CryptoPP::ECPPoint point;
+    		public_k.GetGroupParameters().GetCurve().DecodePoint (point, public_key, public_key_len);
+			public_k.SetPublicElement(point);
+			return public_k;
 		}
 	};
 	// TODO: find a way to secure communication protocol by secritizing some aspects of it
