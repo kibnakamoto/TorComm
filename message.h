@@ -3,6 +3,7 @@
 
 #include <cryptopp/filters.h>
 #include <cryptopp/pubkey.h>
+#include <cryptopp/sha.h>
 #include <cstdlib>
 #include <functional>
 #include <string>
@@ -32,16 +33,6 @@
 
 // get current time
 std::string get_time();
-
-// for operators in Encryptor
-template<typename T>
-concept AesEncryptor = requires(T t)
-{
-	{
-		(std::same_as<T, CryptoPP::GCM<CryptoPP::AES>::Encryption> || 
-		std::same_as<T, CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption>)
-	};
-};
 
 // pt: plaintext
 // key: encryption key
@@ -426,6 +417,12 @@ namespace Cryptography
 					return group.GetCurve().ScalarMultiply(b_public_k, private_key);
 				}
 
+				// bob's public key is multiplied with alice's to generate the ECDH key.
+				inline CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element multiply(CryptoPP::Integer priv_key, CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k)
+				{
+					return group.GetCurve().ScalarMultiply(b_public_k, priv_key);
+				}
+
 				// Hash based key deravation function
 				void hkdf()
 				{
@@ -441,6 +438,38 @@ namespace Cryptography
 				}
 	};
 
+	namespace /* INTERNAL NAMESPACE */
+	{
+		// for operators in Encryptor for cbc and gcm aes encryption
+		template<typename T>
+		concept AesEncryptorCBC_GMC = requires(T t)
+		{
+			{
+				(std::same_as<T, CryptoPP::GCM<CryptoPP::AES>::Encryption> || 
+				 std::same_as<T, CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption>)
+			};
+		};
+
+		// for operators in Decryptor for cbc and gcm aes decryption
+		template<typename T>
+		concept AesDecryptorCBC_GMC = requires(T t)
+		{
+			{
+				(std::same_as<T, CryptoPP::GCM<CryptoPP::AES>::Decryption> || 
+				 std::same_as<T, CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption>)
+			};
+		};
+
+		// for operators in Decryptor for cbc and gcm aes decryption
+		template<typename T>
+		concept SupportedHashAlgs = requires(T t)
+		{
+			{
+				(std::same_as<T, CryptoPP::SHA256> || 
+				 std::same_as<T, CryptoPP::SHA512>)
+			};
+		};
+	} /* END INTERNAL NAMESPACE */
 
 
 	// encryption
@@ -459,7 +488,7 @@ namespace Cryptography
 			bool init=false;
 
 			//void operator()(CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption &enc)
-			void operator()(AesEncryptor auto &enc) // add the requirement of AesEncryptor
+			void operator()(AesEncryptorCBC_GMC auto &enc) // added the requirement of AesEncryptor because the same function required for 2 types
 			{
 				if(!init) {
 					ciphertext_length = plaintext_length<<1;
@@ -597,7 +626,7 @@ namespace Cryptography
 			bool init = false; // is memory allocated
 
 			// check the encryption types
-			void operator()(CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption &dec)
+			void operator()(AesDecryptorCBC_GMC auto &dec)
 			{
 				if(!init) {
 					plaintext_length = ciphertext_length>>1;
@@ -606,16 +635,6 @@ namespace Cryptography
 				CryptoPP::StreamTransformationFilter filter(dec, new CryptoPP::ArraySink(plaintext, plaintext_length));
 				filter.Put(ciphertext, ciphertext_length);
   				filter.MessageEnd();
-				init = true;
-			}
-
-			void operator()(CryptoPP::GCM<CryptoPP::AES>::Decryption &dec)
-			{
-				if(!init) {
-					plaintext_length = ciphertext_length>>1;
-					plaintext = new uint8_t[plaintext_length];
-				}
-				CryptoPP::StreamTransformationFilter filter(dec, new CryptoPP::ArraySink(plaintext, plaintext_length));
 				init = true;
 			}
 
@@ -725,13 +744,16 @@ namespace Cryptography
 											 		  			signer,
 													  			new CryptoPP::VectorSink(signature)));
 		}
-
+		
 		public:
 
 		// msg: message as the data segment. If image, msg_len is IMAGE_BUFFER_SIZE
 		// msg_len: length of msg
 		Ecdsa(ProtocolData &protocol, Key key) : protocol(protocol), key(key) {}
 
+		// returns signature as a vector
+		// msg: message to sign
+		// msg_len: length of message to sign
 		std::vector<uint8_t> sign(uint8_t *msg, uint16_t msg_len)
 		{
 			std::vector<uint8_t> signature;
@@ -749,45 +771,51 @@ namespace Cryptography
 			
 
 		// public key is received as bytes. Convert to ECPoint using: Key::reconstruct_point_from_bytes
+		// msg: message to verify
+		// msg_len: length of msg
+		// signature: ECDSA signature
+		// signature_len: length of signature
+		// public_key: received public key. Not the own public key
 		bool verify(uint8_t *msg, uint16_t msg_len, uint8_t *&signature, uint16_t signature_len,
 					CryptoPP::ECPPoint public_key)
 		{
 			bool verified;
 			if(protocol.hash == SHA256) {
 				CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::PublicKey public_k;
+				public_k.Initialize(protocol.curve_oid, public_key); // init public key
 	    		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::Verifier verifier(public_k);
-				public_k.Initialize(protocol.curve_oid, public_key);
-    			verified = verifier.VerifyMessage(&msg[0], msg_len, &signature[0], signature_len);
+    			verified = verifier.VerifyMessage(&msg[0], msg_len, &signature[0], signature_len); // ecdsa message verification
 			} else if(protocol.hash == SHA512) {
 				CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::PublicKey public_k;
-				public_k.Initialize(protocol.curve_oid, public_key);
+				public_k.Initialize(protocol.curve_oid, public_key); // init public key
 	    		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::Verifier verifier(public_k);
-    			verified = verifier.VerifyMessage(&msg[0], msg_len, &signature[0], signature_len);
+    			verified = verifier.VerifyMessage(&msg[0], msg_len, &signature[0], signature_len); // ecdsa message verification
 			}
 
 			return verified;
 		}
 
 		// returns the length of out buffer, gets the compressed x value with the 03 starting byte
-		template<class HashAlg>
+		template<SupportedHashAlgs HashAlg>
 		inline static uint16_t get_compressed(CryptoPP::ECDSA<CryptoPP::ECP, HashAlg> &public_key, uint8_t *out_buffer)
 		{
 			CryptoPP::Integer x = public_key.GetPublicElement().x;
 			uint16_t bytes_len = x.MinEncodedSize(CryptoPP::Integer::UNSIGNED);
 			out_buffer = new uint8_t[bytes_len+1];
-			x.Encode((uint8_t*)&out_buffer[1], bytes_len, CryptoPP::Integer::UNSIGNED);
-			out_buffer[0] = 0x03;
+			x.Encode(&out_buffer[1], bytes_len, CryptoPP::Integer::UNSIGNED);
+			out_buffer[0] = 0x03; // first byte is 03 to denote that it's compressed. When received public key, check if out_buffer is compressed then call get_decompressed
 			bytes_len++;
 			return bytes_len;
 		}
 
 		// public_key: 03 concatinated with x-coordinate of the public key
-		template<class HashAlg>
+		// public_key_len: length of public key
+		template<SupportedHashAlgs HashAlg>
 		inline static CryptoPP::ECDSA<CryptoPP::ECP, HashAlg> get_decompressed(uint8_t *public_key, uint16_t public_key_len)
 		{
-			CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::PublicKey public_k;
+			typename CryptoPP::ECDSA<CryptoPP::ECP, HashAlg>::PublicKey public_k;
 			CryptoPP::ECPPoint point;
-    		public_k.GetGroupParameters().GetCurve().DecodePoint (point, public_key, public_key_len);
+    		public_k.GetGroupParameters().GetCurve().DecodePoint(point, public_key, public_key_len);
 			public_k.SetPublicElement(point);
 			return public_k;
 		}
