@@ -34,10 +34,6 @@
 // get current time
 std::string get_time();
 
-// pt: plaintext
-// key: encryption key
-// ct: ciphertext, key
-
 namespace Cryptography
 {
 	// GLOBAL:
@@ -152,6 +148,10 @@ namespace Cryptography
 	// AES uses CBC mode (for performance reasons: https://cryptopp.com/benchmarks.html)
 	inline uint8_t default_communication_protocol = (uint8_t)SECP256R1 + ECIES_HMAC_AES256_CBC_SHA256;
 	inline uint16_t default_mac_size = 32;
+	using default_cipher = CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption; // aes cbc mode
+	using default_decipher = CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption; // aes cbc mode
+	using default_hash = CryptoPP::SHA256;
+	CryptoPP::OID default_elliptic_curve = CryptoPP::ASN1::secp256r1();
 
 	// initialize general protocol data based on protocol number
 	class ProtocolData : public ErrorHandling
@@ -191,63 +191,13 @@ namespace Cryptography
 
 			ProtocolData() = default;
 
-			ProtocolData(uint8_t protocol_no)
-			{
-				init(protocol_no);
-			}
+			ProtocolData(uint8_t protocol_no);
 
-			void init(uint8_t protocol_no)
-			{
-				// seperate protocol and curve
-				protocol = (CommunicationProtocol)(protocol_no - protocol_no % LAST);
-				curve = (Curves)(protocol_no % LAST);
-				mac_size = default_mac_size;
+			void init(uint8_t protocol_no);
 
-				// initialize verification algorithm data
-				if(communication_protocols[protocol].find("ECDSA") != std::string::npos) {
-					verifier = ECDSA;
-				} if(communication_protocols[protocol].find("HMAC") != std::string::npos) {
-					verifier = HMAC;
-				} else {
-					error = VERIFICATION_ALGORITHM_NOT_FOUND;
-				}
-				error_handle(VERIFICATION_ALGORITHM_NOT_FOUND, error_handler_verifier_function_not_found, verification_unexpected_error, get_time);
+			ProtocolData(CommunicationProtocol protocol, Curves curve);
 
-				// initialize cipher and decipher object
-				init_cipher_data();
-
-				// if error caused: can only be ENCRYPTION_ALGORITHM_NOT_FOUND
-				if (error != NO_ERROR) {
-					error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND, error_handler_encryption_function_not_found, encryption_unexpected_error, get_time);
-				}
-
-				curve_oid = get_curve();
-
-				init_hash_data();
-				if (error != NO_ERROR) {
-					error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error, get_time);
-				}
-			}
-
-			ProtocolData(CommunicationProtocol protocol, Curves curve)
-			{
-				this->protocol = protocol;
-				this->curve = curve;
-
-				init_cipher_data();
-				error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND, error_handler_encryption_function_not_found, encryption_unexpected_error, get_time);
-
-				init_hash_data();
-				error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error, get_time);
-			}
-
-			uint8_t *generate_iv()
-			{
-					uint8_t *tmp = new uint8_t[iv_size];
-					CryptoPP::AutoSeededRandomPool rnd;
-					rnd.GenerateBlock(tmp, iv_size);
-					return tmp;
-			}
+			uint8_t *generate_iv();
 
 
 		private:
@@ -275,137 +225,31 @@ namespace Cryptography
 					ProtocolData(default_communication_protocol+0);
 			};
 
-			void init_cipher_data()
-			{
-				ct_size=32;
-				if(communication_protocols[protocol].find("AES256") != std::string::npos) {
-					iv_size = 16;
-					cipher = AES256;
-					key_size = 32;
-					block_size = 16;
-				} else if (communication_protocols[protocol].find("AES192") != std::string::npos) {
-					iv_size = 16;
-					cipher = AES192;
-					key_size = 24;
-					block_size = 16;
-				} else if (communication_protocols[protocol].find("AES128") != std::string::npos) {
-					iv_size = 16;
-					cipher = AES128;
-					key_size = 16;
-					block_size = 16;
-				} else if (communication_protocols[protocol].find("CHACHA20") != std::string::npos) {
-					iv_size = 12;
-					cipher = CHACHA20;
-					key_size = 32;
-					block_size = ct_size;
-				} else {
-					error_code = ENCRYPTION_ALGORITHM_NOT_FOUND;
-				}
-
-				// set cipher mode
-				if(communication_protocols[protocol].find("CBC") != std::string::npos) {
-					cipher_mode = CBC;
-					cipherf = CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption();
-					decipherf = CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption();
-				} else if(communication_protocols[protocol].find("GCM") != std::string::npos) {
-					cipher_mode = GCM;
-					cipherf = CryptoPP::GCM<CryptoPP::AES>::Encryption();
-					decipherf = CryptoPP::GCM<CryptoPP::AES>::Decryption();
-				} else { // e.g. CHACHA20, no cipher mode
-					cipher_mode = NO_MODE;
-					cipherf = CryptoPP::ChaCha::Encryption();
-					decipherf = CryptoPP::ChaCha::Encryption();
-				}
-			}
+			void init_cipher_data();
 	
 			// get information about the hashing algorithm used
 			// returns hashing algorithm if applicable
-			void init_hash_data()
-			{
-				if(communication_protocols[protocol].find("SHA256") != std::string::npos) {
-					hash = SHA256;
-					hashf = CryptoPP::SHA256();
-				} else if(communication_protocols[protocol].find("SHA512") != std::string::npos) {
-					hash = SHA512;
-					hashf = CryptoPP::SHA512();
-				} else {
-					error_code = HASHING_ALGORITHM_NOT_FOUND;
-				}
-			}
+			void init_hash_data();
 
 		public:
 			// to get cipher: auto cipher = get_cipher();
 			std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption, // aes cbc mode
 						   CryptoPP::GCM<CryptoPP::AES>::Decryption,      // aes gcm mode
 						   CryptoPP::ChaCha::Encryption>                  // ChaCha20
-						   get_decipher()
-			{
-				switch(cipher) {
-					case AES256:
-					case AES192:
-					case AES128:
-						if(cipher_mode == CBC) {
-							return CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption();
-						} else if(cipher_mode == GCM) {
-							return CryptoPP::GCM<CryptoPP::AES>::Decryption();
-						}
-					case CHACHA20:
-						return CryptoPP::ChaCha::Encryption();
-					default:
-						error = ENCRYPTION_ALGORITHM_NOT_FOUND;
-				}
-			}
+						   get_decipher();
 
 			// to get cipher: auto cipher = get_cipher();
 			std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
 						   CryptoPP::GCM<CryptoPP::AES>::Encryption,      // aes gcm mode
 						   CryptoPP::ChaCha::Encryption>                  // ChaCha20
-						   get_cipher()
-			{
-				switch(cipher) {
-					case AES256:
-					case AES192:
-					case AES128:
-						if(cipher_mode == CBC) {
-							return CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption();
-						} else if(cipher_mode == GCM) {
-							return CryptoPP::GCM<CryptoPP::AES>::Encryption();
-						}
-					case CHACHA20:
-						return CryptoPP::ChaCha::Encryption();
-					default:
-						error = ENCRYPTION_ALGORITHM_NOT_FOUND;
-				}
-			}
+						   get_cipher();
 
 			// to get hash: auto hashf = get_hash();
-			std::variant<CryptoPP::SHA256, CryptoPP::SHA512> get_hash()
-			{
-				switch(hash) {
-					case SHA256:
-						return CryptoPP::SHA256();
-					case SHA512:
-						return CryptoPP::SHA512();
-				}
-			}
+			std::variant<CryptoPP::SHA256, CryptoPP::SHA512> get_hash();
 
 			// to get hash: auto hashf = get_curve();
 			// returns curve OID (Object ID)
-			CryptoPP::OID get_curve()
-			{
-				switch(curve) {
-					case SECP256K1:
-						return CryptoPP::ASN1::secp256k1();
-					case SECP256R1:
-						return CryptoPP::ASN1::secp256r1();
-					case SECP521R1:
-						return CryptoPP::ASN1::secp521r1();
-					case BRAINPOOL256R1:
-						return CryptoPP::ASN1::brainpoolP256r1();
-					case BRAINPOOL512R1:
-						return CryptoPP::ASN1::brainpoolP512r1();
-				}
-			}
+			CryptoPP::OID get_curve();
 	};
 
 	// initialize key
