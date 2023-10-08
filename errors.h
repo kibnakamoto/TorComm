@@ -14,6 +14,7 @@ enum ERRORS
 	COMMUNICATION_PROTOCOL_NOT_FOUND,
 	HASHING_ALGORITHM_NOT_FOUND,
 	ENCRYPTION_ALGORITHM_NOT_FOUND,
+	VERIFICATION_ALGORITHM_NOT_FOUND,
 	ECDSA_SIGNATURE_NOT_VALID
 };
 
@@ -26,6 +27,8 @@ const constexpr static char* ERROR_STRING[]
 	"COMMUNICATION_PROTOCOL_NOT_FOUND",
 	"HASHING_ALGORITHM_NOT_FOUND",
 	"ENCRYPTION_ALGORITHM_NOT_FOUND",
+	"VERIFICATION_ALGORITHM_NOT_FOUND",
+	"ECDSA_SIGNATURE_NOT_VALID"
 };
 
 // if USE_DEFAULT_VALUES, when an algorithm is not found, it will use a predefined one
@@ -58,6 +61,17 @@ class ErrorHandling
 		std::function<void(ERRORS, std::string)> encryption_unexpected_error=[](ERRORS error_code, std::string time) {
 			std::ofstream file(ERRORS_LOG_FILE, std::fstream::in | std::fstream::out | std::fstream::app);
 			file << "\nENCRYPTION UNEXPECTED ERROR (in Cryptography::ProtocolData::init_cipher_data) = TIME: "
+				 << time << "\tERROR_CODE: " << error_code << "\tERROR_ID: " << ERROR_STRING[error_code];
+			file.close();
+		
+			throw error_code;
+		};
+
+		// VERIFICATION
+		// find error and raise it after adding to a log file
+		std::function<void(ERRORS, std::string)> verification_unexpected_error=[](ERRORS error_code, std::string time) {
+			std::ofstream file(ERRORS_LOG_FILE, std::fstream::in | std::fstream::out | std::fstream::app);
+			file << "\nVERIFICATION ALGORITHM ERROR (in Cryptography::ProtocolData::init) = TIME: "
 				 << time << "\tERROR_CODE: " << error_code << "\tERROR_ID: " << ERROR_STRING[error_code];
 			file.close();
 		

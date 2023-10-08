@@ -44,30 +44,70 @@ namespace Cryptography
 	// 	 ECDH for key communication
 	// 	 HKDF for key derevation
 	enum CommunicationProtocol {
-
+		// use ECDSA for verification
 		ECIES_ECDSA_AES256_CBC_SHA256,
 		ECIES_ECDSA_AES256_CBC_SHA512,
 		ECIES_ECDSA_AES192_CBC_SHA256,
 		ECIES_ECDSA_AES192_CBC_SHA512,
 		ECIES_ECDSA_AES128_CBC_SHA256,
 		ECIES_ECDSA_AES128_CBC_SHA512,
+		ECIES_ECDSA_AES256_GCM_SHA256,
+		ECIES_ECDSA_AES256_GCM_SHA512,
+		ECIES_ECDSA_AES192_GCM_SHA256,
+		ECIES_ECDSA_AES192_GCM_SHA512,
+		ECIES_ECDSA_AES128_GCM_SHA256,
+		ECIES_ECDSA_AES128_GCM_SHA512,
 
-		ECIES_ECDSA_CHACHA20_SHA256,
+		// use HMAC for verification (preferred)
+		ECIES_HMAC_AES256_CBC_SHA256,
+		ECIES_HMAC_AES256_CBC_SHA512,
+		ECIES_HMAC_AES192_CBC_SHA256,
+		ECIES_HMAC_AES192_CBC_SHA512,
+		ECIES_HMAC_AES128_CBC_SHA256,
+		ECIES_HMAC_AES128_CBC_SHA512,
+		ECIES_HMAC_AES256_GCM_SHA256,
+		ECIES_HMAC_AES256_GCM_SHA512,
+		ECIES_HMAC_AES192_GCM_SHA256,
+		ECIES_HMAC_AES192_GCM_SHA512,
+		ECIES_HMAC_AES128_GCM_SHA256,
+		ECIES_HMAC_AES128_GCM_SHA512,
+
+		ECIES_ECDSA_CHACHA20_SHA256, // ChaCha20 cipher
 		ECIES_ECDSA_CHACHA20_SHA512,
+		ECIES_HMAC_CHACHA20_SHA256, // HMAC
+		ECIES_HMAC_CHACHA20_SHA512,
 		LAST // not a value, just for iteration
 	};
 
 	const std::string communication_protocols[] {
-
 		"ECIES_ECDSA_AES256_CBC_SHA256",
 		"ECIES_ECDSA_AES256_CBC_SHA512",
 		"ECIES_ECDSA_AES192_CBC_SHA256",
 		"ECIES_ECDSA_AES192_CBC_SHA512",
 		"ECIES_ECDSA_AES128_CBC_SHA256",
 		"ECIES_ECDSA_AES128_CBC_SHA512",
-
-		"ECIES_ECDSA_CHACHA20_CBC_SHA256",
-		"ECIES_ECDSA_CHACHA20_CBC_SHA512",
+		"ECIES_ECDSA_AES256_GCM_SHA256",
+		"ECIES_ECDSA_AES256_GCM_SHA512",
+		"ECIES_ECDSA_AES192_GCM_SHA256",
+		"ECIES_ECDSA_AES192_GCM_SHA512",
+		"ECIES_ECDSA_AES128_GCM_SHA256",
+		"ECIES_ECDSA_AES128_GCM_SHA512",
+		"ECIES_HMAC_AES256_CBC_SHA256",
+		"ECIES_HMAC_AES256_CBC_SHA512",
+		"ECIES_HMAC_AES192_CBC_SHA256",
+		"ECIES_HMAC_AES192_CBC_SHA512",
+		"ECIES_HMAC_AES128_CBC_SHA256",
+		"ECIES_HMAC_AES128_CBC_SHA512",
+		"ECIES_HMAC_AES256_GCM_SHA256",
+		"ECIES_HMAC_AES256_GCM_SHA512",
+		"ECIES_HMAC_AES192_GCM_SHA256",
+		"ECIES_HMAC_AES192_GCM_SHA512",
+		"ECIES_HMAC_AES128_GCM_SHA256",
+		"ECIES_HMAC_AES128_GCM_SHA512",
+		"ECIES_ECDSA_CHACHA20_SHA256",
+		"ECIES_ECDSA_CHACHA20_SHA512",
+		"ECIES_HMAC_CHACHA20_SHA256",
+		"ECIES_HMAC_CHACHA20_SHA512"
 	};
 
 	// make sure all doesn't exceed one byte
@@ -97,6 +137,12 @@ namespace Cryptography
 		SHA256,
 		SHA512
 	};
+	
+	enum VerificationAlgorithm
+	{
+		ECDSA,
+		HMAC
+	};
 
 	// 64-bit salt for HKDF
 	const constexpr static uint8_t salt[8] = {0x8f, 0x49, 0xa8, 0x2c, 0x21, 0xb5, 0x96, 0x5c};
@@ -104,7 +150,8 @@ namespace Cryptography
 
 	// the default values to assign
 	// AES uses CBC mode (for performance reasons: https://cryptopp.com/benchmarks.html)
-	inline uint8_t default_communication_protocol = (uint8_t)SECP256R1 + ECIES_ECDSA_AES256_CBC_SHA256;
+	inline uint8_t default_communication_protocol = (uint8_t)SECP256R1 + ECIES_HMAC_AES256_CBC_SHA256;
+	inline uint16_t default_mac_size = 32;
 
 	// initialize general protocol data based on protocol number
 	class ProtocolData : public ErrorHandling
@@ -129,9 +176,11 @@ namespace Cryptography
 			CipherMode cipher_mode; // cipher mode
 			Curves curve; // Elliptic curve used
 			CryptoPP::OID curve_oid;
+			VerificationAlgorithm verifier;
 			CommunicationProtocol protocol; // not full communication protocol used, doesn't include elliptic curve used
 			uint16_t iv_size;
 			uint16_t key_size;
+			uint16_t mac_size;
 			uint16_t ct_size; // size of ciphertext block size
 			
 			// for efficient custom error checking
@@ -152,17 +201,32 @@ namespace Cryptography
 				// seperate protocol and curve
 				protocol = (CommunicationProtocol)(protocol_no - protocol_no % LAST);
 				curve = (Curves)(protocol_no % LAST);
+				mac_size = default_mac_size;
+
+				// initialize verification algorithm data
+				if(communication_protocols[protocol].find("ECDSA") != std::string::npos) {
+					verifier = ECDSA;
+				} if(communication_protocols[protocol].find("HMAC") != std::string::npos) {
+					verifier = HMAC;
+				} else {
+					error = VERIFICATION_ALGORITHM_NOT_FOUND;
+				}
+				error_handle(VERIFICATION_ALGORITHM_NOT_FOUND, error_handler_verifier_function_not_found, verification_unexpected_error, get_time);
 
 				// initialize cipher and decipher object
 				init_cipher_data();
 
 				// if error caused: can only be ENCRYPTION_ALGORITHM_NOT_FOUND
-				error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND, error_handler_encryption_function_not_found, encryption_unexpected_error, get_time);
+				if (error != NO_ERROR) {
+					error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND, error_handler_encryption_function_not_found, encryption_unexpected_error, get_time);
+				}
 
 				curve_oid = get_curve();
 
 				init_hash_data();
-				error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error, get_time);
+				if (error != NO_ERROR) {
+					error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error, get_time);
+				}
 			}
 
 			ProtocolData(CommunicationProtocol protocol, Curves curve)
@@ -195,10 +259,18 @@ namespace Cryptography
 					ProtocolData(default_communication_protocol+0);
 			};
 
-			// error handler for encryption_algorithm_not_found
+			// error handler for encryption algorithm not found
 			std::function<void()> error_handler_encryption_function_not_found=[]() {
 				if (!USE_DEFAULT_VALUES) // defined in errors.h
 					throw ENCRYPTION_ALGORITHM_NOT_FOUND;
+				else
+					ProtocolData(default_communication_protocol+0);
+			};
+
+			// error handler for verification algorithm not found
+			std::function<void()> error_handler_verifier_function_not_found=[]() {
+				if (!USE_DEFAULT_VALUES) // defined in errors.h
+					throw VERIFICATION_ALGORITHM_NOT_FOUND;
 				else
 					ProtocolData(default_communication_protocol+0);
 			};
@@ -239,7 +311,7 @@ namespace Cryptography
 					cipher_mode = GCM;
 					cipherf = CryptoPP::GCM<CryptoPP::AES>::Encryption();
 					decipherf = CryptoPP::GCM<CryptoPP::AES>::Decryption();
-				} else { // e.g. CHACHA20
+				} else { // e.g. CHACHA20, no cipher mode
 					cipher_mode = NO_MODE;
 					cipherf = CryptoPP::ChaCha::Encryption();
 					decipherf = CryptoPP::ChaCha::Encryption();
@@ -412,13 +484,16 @@ namespace Cryptography
 				}
 
 				// bob's public key is multiplied with alice's to generate the ECDH key.
-				inline CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element multiply(CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k)
+				inline CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element
+				multiply(CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k)
 				{
 					return group.GetCurve().ScalarMultiply(b_public_k, private_key);
 				}
 
 				// bob's public key is multiplied with alice's to generate the ECDH key.
-				inline CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element multiply(CryptoPP::Integer priv_key, CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k)
+				inline CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element
+				multiply(CryptoPP::Integer priv_key,
+						 CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k)
 				{
 					return group.GetCurve().ScalarMultiply(b_public_k, priv_key);
 				}
@@ -528,8 +603,6 @@ namespace Cryptography
 				{
 					cipher.setKeyWithIv(key, protocol.key_size, iv, protocol.iv_size);
 				}
-
-				// https://stackoverflow.com/questions/42817362/encrypt-decrypt-byte-array-crypto#42820221
 
 				// cipher: output of protocol.get_cipher()
 				// data: string, or uint8_t ptr, or buffer, etc. Plaintext
@@ -734,11 +807,12 @@ namespace Cryptography
 		ProtocolData protocol;
 		Key key;
 		CryptoPP::AutoSeededRandomPool prng;
+		std::vector<uint8_t> signature; // only for when signing, when verifying, give the parameter as uint8_t*
 
 		// initialize signer
-		void signer_init(auto signer, std::vector<uint8_t> &signature, uint8_t *msg, uint16_t msg_len, CryptoPP::OID oid)
+		void signer_init(auto signer, uint8_t *msg, uint16_t msg_len)
 		{
-			signer.AccessKey().Initialize(oid, key.private_key);
+			signer.AccessKey().Initialize(protocol.curve_oid, key.private_key);
 			CryptoPP::StringSource s(msg, msg_len, true,
 		    						 new CryptoPP::SignerFilter(prng,
 											 		  			signer,
@@ -754,19 +828,17 @@ namespace Cryptography
 		// returns signature as a vector
 		// msg: message to sign
 		// msg_len: length of message to sign
-		std::vector<uint8_t> sign(uint8_t *msg, uint16_t msg_len)
+		void sign(uint8_t *msg, uint16_t msg_len)
 		{
-			std::vector<uint8_t> signature;
 			if(protocol.hash == SHA256) {
 				CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::Signer signer;
-				signer_init(signer, signature, msg, msg_len, protocol.curve_oid);
+				signer_init(signer, msg, msg_len);
 			} else if(protocol.hash == SHA512) {
 				CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::Signer signer;
-				signer_init(signer, signature, msg, msg_len, protocol.curve_oid);
+				signer_init(signer, msg, msg_len);
 			} else {
 				error = HASHING_ALGORITHM_NOT_FOUND;
 			}
-			return signature;
 		}
 			
 
@@ -790,6 +862,8 @@ namespace Cryptography
 				public_k.Initialize(protocol.curve_oid, public_key); // init public key
 	    		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::Verifier verifier(public_k);
     			verified = verifier.VerifyMessage(&msg[0], msg_len, &signature[0], signature_len); // ecdsa message verification
+			} else {
+				error = HASHING_ALGORITHM_NOT_FOUND;
 			}
 
 			return verified;
@@ -820,6 +894,55 @@ namespace Cryptography
 			return public_k;
 		}
 	};
+
+	class Hmac
+	{
+		ProtocolData protocol;
+		ERRORS error = NO_ERROR;
+		uint8_t *key;
+		uint8_t *mac; // output mac
+
+		// generator initializer
+		// hmacf: hmac function
+		// pt: plaintext
+		// pt_len: plaintext length
+		// mac_ad: Message Authentecation Code unalocated buffer
+		inline void generator_init(auto hmacf, uint8_t *pt, uint16_t pt_len)
+		{
+			CryptoPP::StringSource initilizer(pt, pt_len, true, 
+    		    new CryptoPP::HashFilter(hmacf,
+    		        new CryptoPP::ArraySink(mac, protocol.mac_size)
+    		    ) // HashFilter      
+    		); // StringSource
+		}
+
+		public:
+				Hmac(ProtocolData &protocol, uint8_t *key) : protocol(protocol)
+				{
+					this->key = key;
+					mac = new uint8_t[protocol.mac_size];
+				}
+
+				~Hmac()
+				{
+					delete[] mac;
+				}
+
+				// generate the HMAC code
+				void generate(uint8_t *pt, uint16_t len)
+				{
+					if(protocol.hash == SHA256) {
+						CryptoPP::HMAC<CryptoPP::SHA256> hmac(key, protocol.key_size);
+						generator_init(hmac, pt, len);
+					} else if(protocol.hash == SHA512) {
+						CryptoPP::HMAC<CryptoPP::SHA512> hmac(key, protocol.key_size);
+						generator_init(hmac, pt, len);
+					} else {
+						error = HASHING_ALGORITHM_NOT_FOUND;
+					}
+				}
+	};
+
 	// TODO: find a way to secure communication protocol by secritizing some aspects of it
 }; /* namespace Cryptography */
 
@@ -831,7 +954,7 @@ namespace Cryptography
 // }
 
 // To use ProtocolData: Dont forget try catch for initializing them
-// protocol = ProtocolData(Secp256r1 + ECIES_ECDSA_AES256_CBC_SHA256);
+// protocol = ProtocolData(Secp256r1 + ECIES_HMAC_AES256_CBC_SHA256);
 
 ////////////// KEY
 // To use Key:
@@ -863,7 +986,7 @@ namespace Cryptography
 // d.set_key(cipher);
 // decrypt(cipher, ciphertext, ciphertext_length, plaintext, length);
 // pad_size = d.unpad(plaintext, length);
-// delete[] (plaintext-pad_size);
+// delete[] plaintext;
 // delete[] ciphertext;
 //
 
