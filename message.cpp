@@ -47,6 +47,7 @@ void Cryptography::ProtocolData::init(uint8_t protocol_no)
 	} else {
 		error = VERIFICATION_ALGORITHM_NOT_FOUND;
 
+		// default value
 		verifier = default_verifier;
 	}
 
@@ -183,8 +184,7 @@ std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
 		case AES128:
 			if(cipher_mode == CBC) {
 				return CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption();
-			}
-			else if(cipher_mode == GCM)
+			} else if(cipher_mode == GCM)
 				return CryptoPP::GCM<CryptoPP::AES>::Encryption();
 
 			// default mode
@@ -193,6 +193,8 @@ std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
 			return CryptoPP::ChaCha::Encryption();
 		default:
 			error = ENCRYPTION_ALGORITHM_NOT_FOUND;
+
+			// default value
 			return default_cipher();
 	}
 }
@@ -251,14 +253,19 @@ Cryptography::Key::Key(ProtocolData &protocol) : protocol(protocol)
 			break;
 		default:
 			error = ELLIPTIC_CURVE_NOT_FOUND;
-			error_handle(ELLIPTIC_CURVE_NOT_FOUND,
-			[protocol]() mutable { // elliptic curve not found
-				if (!USE_DEFAULT_VALUES) // defined in errors.h
-					throw ELLIPTIC_CURVE_NOT_FOUND;
-				else
-					protocol.init(default_communication_protocol+0);
-			},
-			ErrorHandling::curve_unexpected_error, get_time);
+
+			// error handling
+			// error_handle(ELLIPTIC_CURVE_NOT_FOUND,
+			// [protocol]() mutable { // elliptic curve not found
+			// 	if (!USE_DEFAULT_VALUES) // defined in errors.h
+			// 		throw ELLIPTIC_CURVE_NOT_FOUND;
+			// 	else
+			// 		protocol.init(default_communication_protocol+0);
+			// },
+			// ErrorHandling::curve_unexpected_error, get_time);
+			
+			// default value
+			group.Initialize(default_elliptic_curve);
 	}
 	CryptoPP::AutoSeededRandomPool rand;
 	private_key = CryptoPP::Integer(rand, CryptoPP::Integer::One(), group.GetMaxExponent()); // generate private key
@@ -627,6 +634,55 @@ CryptoPP::ECDSA<CryptoPP::ECP, HashAlg> Cryptography::Ecdsa::get_decompressed(ui
 	public_k.GetGroupParameters().GetCurve().DecodePoint(point, public_key, public_key_len);
 	public_k.SetPublicElement(point);
 	return public_k;
+}
+
+
+// generator initializer
+// hmacf: hmac function
+// pt: plaintext
+// pt_len: plaintext length
+// mac_ad: Message Authentecation Code unalocated buffer
+void Cryptography::Hmac::generator_init(auto hmacf, uint8_t *pt, uint16_t pt_len)
+{
+	CryptoPP::StringSource initilizer(pt, pt_len, true, 
+	    new CryptoPP::HashFilter(hmacf,
+	        new CryptoPP::ArraySink(mac, protocol.mac_size)
+	    ) // HashFilter      
+	); // StringSource
+}
+
+Cryptography::Hmac::Hmac(ProtocolData &protocol, uint8_t *key) : protocol(protocol)
+{
+	this->key = key;
+	mac = new uint8_t[protocol.mac_size];
+}
+
+Cryptography::Hmac::~Hmac()
+{
+	delete[] mac;
+}
+
+// generate the HMAC code
+void Cryptography::Hmac::generate(uint8_t *pt, uint16_t len)
+{
+	if(protocol.hash == SHA256) {
+		CryptoPP::HMAC<CryptoPP::SHA256> hmac(key, protocol.key_size);
+		generator_init(hmac, pt, len);
+	} else if(protocol.hash == SHA512) {
+		CryptoPP::HMAC<CryptoPP::SHA512> hmac(key, protocol.key_size);
+		generator_init(hmac, pt, len);
+	} else {
+		error = HASHING_ALGORITHM_NOT_FOUND;
+
+		// default values
+		CryptoPP::HMAC<default_hash> hmac(key, protocol.key_size);
+		generator_init(hmac, pt, len);
+	}
+}
+
+void Cryptography::Hmac::verify()
+{
+	
 }
 
 
