@@ -3,8 +3,27 @@
 #include <ctime>
 #include <chrono>
 #include <string>
+#include <variant>
+
+#include <cryptopp/cryptlib.h>
+#include <cryptopp/aes.h>
+#include <cryptopp/eccrypto.h>
+#include <cryptopp/osrng.h>
+#include <cryptopp/oids.h>
+#include <cryptopp/integer.h>
+#include <cryptopp/hkdf.h>
+#include <cryptopp/modes.h>
+#include <cryptopp/rijndael.h>
+#include <cryptopp/gcm.h>
+#include <cryptopp/chacha.h>
 
 #include "message.h"
+#include "errors.h"
+
+#include <boost/asio/buffer.hpp>
+
+#include <jsoncpp/json/json.h>
+
 
 // TODO: secure messages
 
@@ -27,8 +46,9 @@ void Cryptography::ProtocolData::init(uint8_t protocol_no)
 		verifier = HMAC;
 	} else {
 		error = VERIFICATION_ALGORITHM_NOT_FOUND;
+
+		verifier = default_verifier;
 	}
-	error_handle(VERIFICATION_ALGORITHM_NOT_FOUND, error_handler_verifier_function_not_found, verification_unexpected_error, get_time);
 
 	// initialize cipher and decipher object
 	init_cipher_data();
@@ -140,7 +160,7 @@ std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption, // aes cbc mode
 			} else if(cipher_mode == GCM) {
 				return CryptoPP::GCM<CryptoPP::AES>::Decryption();
 			}
-			[[fallthrough]];
+			return default_decipher();
 		case CHACHA20:
 			return CryptoPP::ChaCha::Encryption();
 		default:
@@ -161,11 +181,14 @@ std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
 		case AES256:
 		case AES192:
 		case AES128:
-			if(cipher_mode == GCM)
+			if(cipher_mode == CBC) {
+				return CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption();
+			}
+			else if(cipher_mode == GCM)
 				return CryptoPP::GCM<CryptoPP::AES>::Encryption();
 
 			// default mode
-			return CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption();
+			return default_cipher();
 		case CHACHA20:
 			return CryptoPP::ChaCha::Encryption();
 		default:
@@ -417,6 +440,195 @@ uint8_t *Cryptography::Cipher::pad(uint8_t *data, uint16_t &length)
     delete[] data;
     return dat;
 }
+
+
+void Cryptography::Decipher::Decryptor::operator()(AesDecryptorCBC_GMC auto &dec)
+{
+	if(!init) {
+		plaintext_length = ciphertext_length>>1;
+		plaintext = new uint8_t[plaintext_length];
+	}
+	CryptoPP::StreamTransformationFilter filter(dec, new CryptoPP::ArraySink(plaintext, plaintext_length));
+	filter.Put(ciphertext, ciphertext_length);
+	filter.MessageEnd();
+	init = true;
+}
+
+void Cryptography::Decipher::Decryptor::operator()(CryptoPP::ChaCha::Encryption &dec)
+{
+	if(!init) {
+		plaintext_length = ciphertext_length;
+		plaintext = new uint8_t[plaintext_length];
+	}
+	dec.ProcessData(&plaintext[0], (const uint8_t*)ciphertext, ciphertext_length);
+	init = true;
+}
+
+Cryptography::Decipher::Decipher(ProtocolData &protocol, uint8_t *key, uint8_t *iv) : protocol(protocol)
+{
+	this->key = key; // no need to destroy key since it's not allocated here.
+	this->iv = iv; // no need to destroy key since it's not allocated here.
+}
+
+// cipher: output of protocol.get_decipher()
+// ct: ciphertext
+// ct_len: ciphertext length
+// data: plaintext
+// length: data length, the send packet length. if 1GB image, it would be IMAGE_BUFFER_SIZE, if last packet. has to be padded to be a multiple of protocol.block_size.
+// decrypts data, doesn't remove padding
+void Cryptography::Decipher::decrypt(auto &ct, uint16_t ct_len, uint8_t *&pt, uint16_t &length, bool &is_pt_allocated)
+{
+		uint8_t *data;
+
+		// data has to be uint8_t*
+		data = Cipher::to_uint8_ptr(ct);
+
+		decryptor.ciphertext = ct;
+		decryptor.plaintext = pt;
+		decryptor.ciphertext_length = ct_len;
+		decryptor.plaintext_length = length;
+		decryptor.init = is_pt_allocated;
+		std::visit(decryptor, protocol.decipherf);
+
+		// check the encryption types
+		// switch(protocol.cipher) {
+		// 	case CHACHA20:
+		// 		length = ct_len;
+		// 		pt = new uint8_t[length];
+	 	// 		cipher.ProcessData(&pt[0], (const uint8_t*)data, length);
+		// 		break;
+		// 	case AES256:
+		// 	case AES192:
+		// 	case AES128:
+		// 		length = ct_len>>1;
+		// 		pt = new uint8_t[length];
+		// 		CryptoPP::StreamTransformationFilter filter(cipher, new CryptoPP::ArraySink(pt, length));
+		// 		filter.Put(ct, ct_len);
+		// 		filter.MessageEnd();
+		// 		break;
+		// }
+}
+
+// set key with iv
+void Cryptography::Decipher::set_key(auto cipher)
+{
+	cipher.setKeyWithIv(key, protocol.key_size, iv, protocol.iv_size);
+}
+
+// remove padding
+// the last value of data is pad size to remove
+// keep the pad size from the original length. delete it accordingly
+// to delete:
+//		delete[] (data-pad_size);
+// data: decrypted padded data
+// length: length of padded data
+// return: pad size
+uint8_t Cryptography::Decipher::unpad(uint8_t *&data, uint16_t &length)
+{
+	uint8_t pad_size = data[0];
+	length -= pad_size;
+
+	// realloc
+	uint8_t *new_data = new uint8_t[length];
+	memcpy(new_data, &data[pad_size], length);
+	delete[] data;
+	data = new_data;
+
+	return pad_size;
+}
+
+
+void Cryptography::Ecdsa::signer_init(auto signer, uint8_t *msg, uint16_t msg_len)
+{
+	signer.AccessKey().Initialize(protocol.curve_oid, key.private_key);
+	CryptoPP::StringSource s(msg, msg_len, true,
+    						 new CryptoPP::SignerFilter(prng,
+									 		  			signer,
+											  			new CryptoPP::VectorSink(signature)));
+}
+
+// msg: message as the data segment. If image, msg_len is IMAGE_BUFFER_SIZE
+// msg_len: length of msg
+// Cryptography::Ecdsa::Ecdsa(ProtocolData &protocol, Key key) : protocol(protocol), key(key) {}
+
+// returns signature as a vector
+// msg: message to sign
+// msg_len: length of message to sign
+void Cryptography::Ecdsa::sign(uint8_t *msg, uint16_t msg_len)
+{
+	if(protocol.hash == SHA256) {
+		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::Signer signer;
+		signer_init(signer, msg, msg_len);
+	} else if(protocol.hash == SHA512) {
+		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::Signer signer;
+		signer_init(signer, msg, msg_len);
+	} else {
+		error = HASHING_ALGORITHM_NOT_FOUND;
+
+		// give it the default value
+		CryptoPP::ECDSA<CryptoPP::ECP, default_hash>::Signer signer;
+		signer_init(signer, msg, msg_len);
+	}
+}
+
+// public key is received as bytes. Convert to ECPoint using: Key::reconstruct_point_from_bytes
+// msg: message to verify
+// msg_len: length of msg
+// signature: ECDSA signature
+// signature_len: length of signature
+// public_key: received public key. Not the own public key
+bool Cryptography::Ecdsa::verify(uint8_t *msg, uint16_t msg_len, uint8_t *&signature, uint16_t signature_len,
+			CryptoPP::ECPPoint public_key)
+{
+	bool verified;
+	if(protocol.hash == SHA256) {
+		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::PublicKey public_k;
+		public_k.Initialize(protocol.curve_oid, public_key); // init public key
+		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::Verifier verifier(public_k);
+		verified = verifier.VerifyMessage(&msg[0], msg_len, &signature[0], signature_len); // ecdsa message verification
+	} else if(protocol.hash == SHA512) {
+		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::PublicKey public_k;
+		public_k.Initialize(protocol.curve_oid, public_key); // init public key
+		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::Verifier verifier(public_k);
+		verified = verifier.VerifyMessage(&msg[0], msg_len, &signature[0], signature_len); // ecdsa message verification
+	} else {
+		error = HASHING_ALGORITHM_NOT_FOUND;
+
+		// default hash value
+		CryptoPP::ECDSA<CryptoPP::ECP, default_hash>::PublicKey public_k;
+		public_k.Initialize(protocol.curve_oid, public_key); // init public key
+		CryptoPP::ECDSA<CryptoPP::ECP, default_hash>::Verifier verifier(public_k);
+		verified = verifier.VerifyMessage(&msg[0], msg_len, &signature[0], signature_len); // ecdsa message verification
+	}
+
+	return verified;
+}
+
+// returns the length of out buffer, gets the compressed x value with the 03 starting byte
+template<Cryptography::SupportedHashAlgs HashAlg>
+uint16_t Cryptography::Ecdsa::get_compressed(CryptoPP::ECDSA<CryptoPP::ECP, HashAlg> &public_key, uint8_t *out_buffer)
+{
+	CryptoPP::Integer x = public_key.GetPublicElement().x;
+	uint16_t bytes_len = x.MinEncodedSize(CryptoPP::Integer::UNSIGNED);
+	out_buffer = new uint8_t[bytes_len+1];
+	x.Encode(&out_buffer[1], bytes_len, CryptoPP::Integer::UNSIGNED);
+	out_buffer[0] = 0x03; // first byte is 03 to denote that it's compressed. When received public key, check if out_buffer is compressed then call get_decompressed
+	bytes_len++;
+	return bytes_len;
+}
+
+// public_key: 03 concatinated with x-coordinate of the public key
+// public_key_len: length of public key
+template<Cryptography::SupportedHashAlgs HashAlg>
+CryptoPP::ECDSA<CryptoPP::ECP, HashAlg> Cryptography::Ecdsa::get_decompressed(uint8_t *public_key, uint16_t public_key_len)
+{
+	typename CryptoPP::ECDSA<CryptoPP::ECP, HashAlg>::PublicKey public_k;
+	CryptoPP::ECPPoint point;
+	public_k.GetGroupParameters().GetCurve().DecodePoint(point, public_key, public_key_len);
+	public_k.SetPublicElement(point);
+	return public_k;
+}
+
 
 // message and time
 template<typename T>
