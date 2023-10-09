@@ -263,98 +263,31 @@ namespace Cryptography
 				CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element public_key;
 				uint8_t *key; // established key
 
-				Key(ProtocolData &protocol) : protocol(protocol)
-				{
-					key = new uint8_t[protocol.key_size];
-					switch(protocol.curve) {
-						case SECP256K1:
-							group.Initialize(CryptoPP::ASN1::secp256k1());
-							break;
-						case SECP256R1:
-							group.Initialize(CryptoPP::ASN1::secp256r1());
-							break;
-						case SECP521R1:
-							group.Initialize(CryptoPP::ASN1::secp521r1());
-							break;
-						case BRAINPOOL256R1:
-							group.Initialize(CryptoPP::ASN1::brainpoolP256r1());
-							break;
-						case BRAINPOOL512R1:
-							group.Initialize(CryptoPP::ASN1::brainpoolP512r1());
-							break;
-						default:
-							error = ELLIPTIC_CURVE_NOT_FOUND;
-							error_handle(ELLIPTIC_CURVE_NOT_FOUND,
-							[protocol]() mutable { // elliptic curve not found
-								if (!USE_DEFAULT_VALUES) // defined in errors.h
-									throw ELLIPTIC_CURVE_NOT_FOUND;
-								else
-									protocol.init(default_communication_protocol+0);
-							},
-							ErrorHandling::curve_unexpected_error, get_time);
-					}
-					CryptoPP::AutoSeededRandomPool rand;
-					private_key = CryptoPP::Integer(rand, CryptoPP::Integer::One(), group.GetMaxExponent()); // generate private key
-					public_key  = group.ExponentiateBase(private_key);
-				}
+				Key(ProtocolData &protocol) : protocol(protocol);
 
-				~Key()
-				{
-					delete[] key;
-				}
+				~Key();
 
 				// convert public key to uint8_t*
-				static void integer_to_bytes(CryptoPP::Integer num, uint8_t *&bytes, uint16_t &bytes_len)
-				{
-					bytes_len = num.MinEncodedSize(CryptoPP::Integer::UNSIGNED);
-					bytes = new uint8_t[bytes_len];
-					num.Encode((uint8_t*)&bytes[0], bytes_len, CryptoPP::Integer::UNSIGNED);
-				}
+				static void integer_to_bytes(CryptoPP::Integer num, uint8_t *&bytes, uint16_t &bytes_len);
 
-				static CryptoPP::Integer bytes_to_integer(uint8_t *&bytes, uint16_t &bytes_len)
-				{
-					CryptoPP::Integer x;
-					x.Decode(bytes, bytes_len);
-					return x;
-				}
+				static CryptoPP::Integer bytes_to_integer(uint8_t *&bytes, uint16_t &bytes_len);
 
 				inline static CryptoPP::ECPPoint reconstruct_point_from_bytes(uint8_t *public_key_x,
 																			  uint16_t public_key_x_len,
 																			  uint8_t *public_key_y,
-																			  uint16_t public_key_y_len)
-				{
-					return CryptoPP::ECPPoint(Key::bytes_to_integer(public_key_x, public_key_x_len),
-											  Key::bytes_to_integer(public_key_y, public_key_y_len));
-				}
+																			  uint16_t public_key_y_len);
 
 				// bob's public key is multiplied with alice's to generate the ECDH key.
 				inline CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element
-				multiply(CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k)
-				{
-					return group.GetCurve().ScalarMultiply(b_public_k, private_key);
-				}
+				multiply(CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k);
 
 				// bob's public key is multiplied with alice's to generate the ECDH key.
 				inline CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element
 				multiply(CryptoPP::Integer priv_key,
-						 CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k)
-				{
-					return group.GetCurve().ScalarMultiply(b_public_k, priv_key);
-				}
+						 CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k);
 
 				// Hash based key deravation function
-				void hkdf()
-				{
-					if(protocol.hash == SHA256) {
-						CryptoPP::HKDF<CryptoPP::SHA256> hkdf;
-					    hkdf.DeriveKey(key, protocol.key_size, (const uint8_t*)"", 0, salt, salt_len, NULL, 0);
-					} else if (protocol.hash == SHA512) {
-						CryptoPP::HKDF<CryptoPP::SHA512> hkdf;
-					    hkdf.DeriveKey(key, protocol.key_size, (const uint8_t*)"", 0, salt, salt_len, NULL, 0);
-					} else {
-						error = HASHING_ALGORITHM_NOT_FOUND;
-					}
-				}
+				void hkdf();
 	};
 
 	namespace /* INTERNAL NAMESPACE */
