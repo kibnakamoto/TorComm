@@ -263,7 +263,7 @@ namespace Cryptography
 				CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element public_key;
 				uint8_t *key; // established key
 
-				Key(ProtocolData &protocol) : protocol(protocol);
+				Key(ProtocolData &protocol);
 
 				~Key();
 
@@ -340,46 +340,19 @@ namespace Cryptography
 			bool init=false;
 
 			//void operator()(CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption &enc)
-			void operator()(AesEncryptorCBC_GMC auto &enc) // added the requirement of AesEncryptor because the same function required for 2 types
-			{
-				if(!init) {
-					ciphertext_length = plaintext_length<<1;
-					ciphertext = new uint8_t[ciphertext_length];
-				}
-				CryptoPP::StreamTransformationFilter filter(enc, new CryptoPP::ArraySink(ciphertext, ciphertext_length));
-				filter.Put(plaintext, plaintext_length);
-  				filter.MessageEnd();
-				init = true;
-			}
+			void operator()(AesEncryptorCBC_GMC auto &enc); // added the requirement of AesEncryptor because the same function required for 2 types
 
 			// void operator()(CryptoPP::GCM<CryptoPP::AES>::Encryption &enc) // same function definition above if concept doesn't work
 
-			void operator()(CryptoPP::ChaCha::Encryption &enc)
-			{
-				if(!init) {
-					ciphertext_length = plaintext_length;
-					ciphertext = new uint8_t[ciphertext_length];
-				}
-				enc.ProcessData((uint8_t*)&ciphertext[0], (const uint8_t*)plaintext, plaintext_length);
-				init = true;
-			}
+			void operator()(CryptoPP::ChaCha::Encryption &enc);
 		};
 		Encryptor encryptor = Encryptor();
 
 		public:
-				
-
-				Cipher(ProtocolData &protocol, uint8_t *key, uint8_t *iv) : protocol(protocol)
-				{
-					this->key = key; // no need to destroy key since it's not allocated here.
-					this->iv = iv; // no need to destroy key since it's not allocated here.
-				}
+				Cipher(ProtocolData &protocol, uint8_t *key, uint8_t *iv);
 
 				// set key with iv
-				void set_key(auto cipher)
-				{
-					cipher.setKeyWithIv(key, protocol.key_size, iv, protocol.iv_size);
-				}
+				void set_key(auto cipher);
 
 				// cipher: output of protocol.get_cipher()
 				// data: string, or uint8_t ptr, or buffer, etc. Plaintext
@@ -387,52 +360,10 @@ namespace Cryptography
 				// ct: ciphertext
 				// ct_len: ciphertext length
 				// mem_allocated: if memory is allocated, don't reallocate
-				void encrypt(auto &data, uint16_t length, uint8_t *&ct, uint16_t &ct_len, bool &is_ct_allocated)
-				{
-						uint8_t *pt; // padding assumed to be done, use the pad function for padding
-
-						// data has to be uint8_t*
-						pt = to_uint8_ptr(data);
-
-						// check the encryption types
-						encryptor.ciphertext = ct;
-						encryptor.plaintext = pt;
-						encryptor.ciphertext_length = ct_len;
-						encryptor.plaintext_length = length;
-						encryptor.init = is_ct_allocated;
-						std::visit(encryptor, protocol.cipherf);
-
-						//switch(protocol.cipher) {
-						//	case CHACHA20:
-						//		ct_len = length;
-						//		ct = new uint8_t[ct_len];
-						//		cipher.ProcessData((uint8_t*)&ct[0], (const uint8_t*)pt, length);
-						//		//protocol.cipherf.ProcessData((uint8_t*)&ct[0], (const uint8_t*)pt, length);
-						//		break;
-						//	case AES256:
-						//	case AES192:
-						//	case AES128:
-						//		ct_len = length<<1;
-						//		ct = new uint8_t[ct_len];
-						//		CryptoPP::StreamTransformationFilter filter(cipher, new CryptoPP::ArraySink(ct, ct_len));
-						//		filter.Put(pt, length);
-  						//		filter.MessageEnd();
-						//		break;
-						//}
-				}
+				void encrypt(auto &data, uint16_t length, uint8_t *&ct, uint16_t &ct_len, bool &is_ct_allocated);
 
 				// to convert strings and boost buffers to uint8_t*
-				static constexpr uint8_t *to_uint8_ptr(auto data)
-				{
-					if constexpr(std::is_same<decltype(data), std::string>()) {
-						return data.c_str();
-					} else if constexpr(std::is_same<decltype(data), boost::asio::const_buffers_1>() ||
-										std::is_same<decltype(data), boost::asio::mutable_buffers_1>()) { // convert buffer to uint8_t*
-						return boost::asio::buffer_cast<uint8_t*>(data);
-					} else { // uint8_t*
-						return data;
-					}
-				}
+				static constexpr uint8_t *to_uint8_ptr(auto data);
 
 				// reminder: length of data is the length of plaintext data to send. Data packet. Not the whole data
 
@@ -440,24 +371,7 @@ namespace Cryptography
 				// length: length of data
 				// pad_size: pad_size
 				// Pads the data from left to right. no need to remove padding, just remove the first zero digits
-				uint8_t *pad(uint8_t *data, uint16_t &length)
-				{
-				    uint8_t *dat;
-					uint8_t pad_size;
-				    uint16_t original_length = length;
-					uint16_t mod = length % protocol.block_size;
-				    pad_size = protocol.block_size - mod;
-					if(mod == 0) // if 32-byte unpadded, then pad_size=0, if zero, than dat[length-1] = pad_size would modify the plaintext
-						pad_size += protocol.block_size;
-				    length += pad_size;
-				    dat = new uint8_t[length];
-				    // memcpy(&dat[pad_size], data, original_length); // for left to right padding
-				    memcpy(dat, data, original_length);				  // for right to left padding (append to end of message)
-					dat[length-1] = pad_size; // last digit of data is length
-				    delete[] data;
-				    return dat;
-				}
-
+				uint8_t *pad(uint8_t *data, uint16_t &length);
 	};
 
 	// Decryption
