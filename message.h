@@ -427,7 +427,6 @@ namespace Cryptography
 	// Elliptic Cryptography Digital Signature Algorithm
 	class Ecdsa : public ErrorHandling
 	{
-		ERRORS error = NO_ERROR;
 		ProtocolData protocol;
 		Key key;
 		CryptoPP::AutoSeededRandomPool prng;
@@ -466,10 +465,9 @@ namespace Cryptography
 		inline static CryptoPP::ECDSA<CryptoPP::ECP, HashAlg> get_decompressed(uint8_t *public_key, uint16_t public_key_len);
 	};
 
-	class Hmac
+	class Hmac : public ErrorHandling
 	{
 		ProtocolData protocol;
-		ERRORS error = NO_ERROR;
 		uint8_t *key;
 		uint8_t *mac; // output mac
 
@@ -478,40 +476,17 @@ namespace Cryptography
 		// pt: plaintext
 		// pt_len: plaintext length
 		// mac_ad: Message Authentecation Code unalocated buffer
-		inline void generator_init(auto hmacf, uint8_t *pt, uint16_t pt_len)
-		{
-			CryptoPP::StringSource initilizer(pt, pt_len, true, 
-    		    new CryptoPP::HashFilter(hmacf,
-    		        new CryptoPP::ArraySink(mac, protocol.mac_size)
-    		    ) // HashFilter      
-    		); // StringSource
-		}
+		inline void generator_init(auto hmacf, uint8_t *pt, uint16_t pt_len);
 
 		public:
-				Hmac(ProtocolData &protocol, uint8_t *key) : protocol(protocol)
-				{
-					this->key = key;
-					mac = new uint8_t[protocol.mac_size];
-				}
+				Hmac(ProtocolData &protocol, uint8_t *key);
 
-				~Hmac()
-				{
-					delete[] mac;
-				}
+				~Hmac();
 
 				// generate the HMAC code
-				void generate(uint8_t *pt, uint16_t len)
-				{
-					if(protocol.hash == SHA256) {
-						CryptoPP::HMAC<CryptoPP::SHA256> hmac(key, protocol.key_size);
-						generator_init(hmac, pt, len);
-					} else if(protocol.hash == SHA512) {
-						CryptoPP::HMAC<CryptoPP::SHA512> hmac(key, protocol.key_size);
-						generator_init(hmac, pt, len);
-					} else {
-						error = HASHING_ALGORITHM_NOT_FOUND;
-					}
-				}
+				void generate(uint8_t *pt, uint16_t len);
+
+				void verify();
 	};
 
 	// TODO: find a way to secure communication protocol by secritizing some aspects of it
