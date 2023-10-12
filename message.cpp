@@ -641,7 +641,6 @@ CryptoPP::ECDSA<CryptoPP::ECP, HashAlg> Cryptography::Ecdsa::get_decompressed(ui
 // hmacf: hmac function
 // pt: plaintext
 // pt_len: plaintext length
-// mac_ad: Message Authentecation Code unalocated buffer
 void Cryptography::Hmac::generator_init(auto hmacf, uint8_t *pt, uint16_t pt_len)
 {
 	CryptoPP::StringSource initilizer(pt, pt_len, true, 
@@ -649,6 +648,26 @@ void Cryptography::Hmac::generator_init(auto hmacf, uint8_t *pt, uint16_t pt_len
 	        new CryptoPP::ArraySink(mac, protocol.mac_size)
 	    ) // HashFilter      
 	); // StringSource
+}
+
+// mac member has to be initialized before calling
+bool Cryptography::Hmac::verifier_init(auto hmacf, uint8_t *pt, uint16_t len)
+{
+	bool verify = false;
+    const int flags = CryptoPP::HashVerificationFilter::PUT_RESULT | CryptoPP::HashVerificationFilter::HASH_AT_END;
+	uint16_t data_len = len+protocol.mac_size;
+	uint8_t *data = new uint8_t[data_len];
+
+	// copy pt + mac to data
+	memcpy(data, pt, len);
+	memcpy(&data[len], mac, protocol.mac_size);
+
+    
+	CryptoPP::StringSource(data, data_len, true, 
+        new CryptoPP::HashVerificationFilter(hmacf, new CryptoPP::ArraySink((uint8_t*)verify, sizeof(verify)), flags)
+    );
+	delete[] data;
+	return verify;
 }
 
 Cryptography::Hmac::Hmac(ProtocolData &protocol, uint8_t *key) : protocol(protocol)
@@ -680,9 +699,24 @@ void Cryptography::Hmac::generate(uint8_t *pt, uint16_t len)
 	}
 }
 
-void Cryptography::Hmac::verify()
+// verify the HMAC code
+bool Cryptography::Hmac::verify(uint8_t *pt, uint16_t len)
 {
-	
+	bool verify;
+	if(protocol.hash == SHA256) {
+		CryptoPP::HMAC<CryptoPP::SHA256> hmac(key, protocol.key_size);
+		verify = verifier_init(hmac, pt, len);
+	} else if(protocol.hash == SHA512) {
+		CryptoPP::HMAC<CryptoPP::SHA512> hmac(key, protocol.key_size);
+		verify = verifier_init(hmac, pt, len);
+	} else {
+		error = HASHING_ALGORITHM_NOT_FOUND;
+
+		// default values
+		CryptoPP::HMAC<default_hash> hmac(key, protocol.key_size);
+		verify = verifier_init(hmac, pt, len);
+	}
+	return verify;
 }
 
 
