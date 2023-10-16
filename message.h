@@ -154,6 +154,23 @@ namespace Cryptography
 	using default_decipher = CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption; // aes cbc mode
 	using default_hash = CryptoPP::SHA256;
 
+	// uses sha512 algorithm
+	inline uint8_t *hashIpWithSalt(std::string ip)
+	{
+		CryptoPP::SHA512 hashf;
+		uint8_t ip_len = ip.length();
+		uint8_t new_len = salt_len+ip_len;
+		uint8_t *in = new uint8_t[new_len];
+		memcpy(in, ip.c_str(), ip_len); // copy ip
+		memcpy(&in[ip_len], salt, salt_len); // copy salt
+
+		hashf.Update((const uint8_t*)in, new_len);
+		uint8_t *out = new uint8_t[64]; // SHA512 output is 64 bytes
+		hashf.Final(&out[0]);
+		delete[] in;
+		return out;
+	}
+
 	// initialize general protocol data based on protocol number
 	class ProtocolData : public ErrorHandling
 	{

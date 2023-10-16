@@ -11,11 +11,6 @@
 // https://github.com/sehe/asio-socks45-client/tree/main
 //
 
-Server::~Server()
-{
-	delete[] buffer;
-}
-
 template<typename T>
 PacketParser<T>::PacketParser(T packet)
 {
