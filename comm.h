@@ -8,13 +8,14 @@
 #include <boost/asio.hpp>
 
 #include "message.h"
+#include "errors.h"
 
 // The Buffer sizes are NOT CONSTANT, these numbers are for SEGMENTS OF DATA. E.g. 1 byte text message will be sent as 1 byte, not 1024 bytes
 // aes-256 encrypted message block sizes, divide by 2 for msg lengths, encrypted length of aes-256
 
 // This is ciphertext size, not plaintext. All data will be send as ciphertext
 // This is counting padding
-// They are set to be a multiple of 32
+// They are set to be a multiple of 32msg_type
 enum BUFFER_SIZES {
 	// 8 byte message length + 1-byte msg type + 519-byte message (plaintext size), ciphertext is double the size
 	GENESIS_BUFFER_SIZE = 1056,  // 0x020a   - The first message block for all types
@@ -87,47 +88,59 @@ class PacketParser
 // 	T msg;
 // };
 
-// Client can connect to multiple servers
-class Client
-{
-	
-};
-
-// Server can have multiple clients
-class Server
-{
-	public:
-			uint64_t buffer_size;
-			boost::asio::socket_base::receive_buffer_size buff_size_recv;
-			boost::asio::socket_base::send_buffer_size buff_size_send;
-			boost::asio::io_context io_service();
-			//boost::asio::ip::tcp::socket sock;
-			uint8_t *buffer;
-			std::string ip;
-			std::vector<Client> clients;
-
-			Server(std::string ipv6, uint64_t buff_size)
-			{
-				// set buffer size
-				buffer_size = buff_size;
-				buffer = new uint8_t[buffer_size];
-				ip = ipv6;
-				//sock = boost::asio::ip::tcp::socket(io_service);
-
-				//// only ipv6 supported
-				//boost::asio::ip::v6_only option_v6(true);
-				//sock.set_option(option_v6);
-
-				//boost::asio::buffer(buffer, msg_len);
-			}
-
-			~Server();
-			
-};
-
 // P2P has Client and Server on all connections
 class P2P
 {
+		boost::asio::io_context io_context;
+		std::vector<boost::asio::ip::tcp::socket> clients;
+		std::vector<boost::asio::ip::tcp::socket> servers;
+		boost::asio::ip::tcp::acceptor listener;
+		uint8_t *buffer;
+		boost::asio::ip::v6_only ipv6_option{true};
+		P2P(uint16_t port) : listener(boost::asio::ip::tcp::acceptor(io_context, {{}, port}, true))
+		{
+			
+		}
 
+		// listen to oncoming connections
+		void listen()
+		{
+    		listener.listen();
+		}
+
+		// blocked_ips: the blocked ips that shouldn't connect. It's not their IP but the hash of their ip
+		void accept(std::vector<uint8_t *> blocked_ips)
+		{
+			std::ofstream file(NETWORK_LOG_FILE, std::fstream::in | std::fstream::out | std::fstream::app);
+        	listener.async_accept([&](boost::system::error_code const& ec, boost::asio::ip::tcp::socket sock) {
+			if (!ec) {
+				sock.set_option(ipv6_option);
+				uint8_t *sock_adr = Cryptography::hashIpWithSalt(sock.remote_endpoint().address().to_string()); // hash the ipv6 address with Cryptography::salt
+				if(std::any_of(blocked_ips.begin(), blocked_ips.end(), [sock_adr](uint8_t *blocked_ip)
+				   {
+					for(uint8_t i=0;i<64;i++) { // 64 byte hash comparision. If equal
+						if(sock_adr[i] != blocked_ip[i]) {
+							return false; // TODO: Is the conditional return prone to side-channel attacks?
+						}
+					}
+					return true;
+				   })) {
+					if(log_network_issues) {
+						file << "\nblocked ip connection request (in P2P::accept) = TIME: "
+							 << get_time(); // TODO: don't save ips use salt and hash the blocked ip using sha512. and compare the hashes on each request
+					}
+				} else {
+			    	clients.push_back(std::move(sock));
+				}
+				delete[] sock_adr;
+			    accept(blocked_ips);
+			}
+        	});
+			file.close();
+		}
+
+		void send(uint8_t type);
+
+		uint8_t *recv();
 };
 #endif /* COMM_H */
