@@ -24,7 +24,7 @@ void gen_key_exe(uint16_t key_size=34)
 	CryptoPP::AutoSeededRandomPool rng;
 
 	// generate key and pepper
-	rng.GenerateBlock(key, 34);
+	rng.GenerateBlock(key, key_size);
 	rng.GenerateBlock(key_to_hash, 64);
 	memcpy(pepper, key_to_hash, 64); // make a copy of pepper
 	rng.GenerateBlock(iv, 12);
@@ -56,11 +56,11 @@ void gen_key_exe(uint16_t key_size=34)
 
 	// hash key_to_hash and use as key to encrypt key
 	uint8_t *hash = new uint8_t[32]; // hash of key_to_hash
-	uint8_t *encrypted = new uint8_t[34]; // hash of key_to_hash
+	uint8_t *encrypted = new uint8_t[key_size]; // hash of key_to_hash
 	CryptoPP::SHA256().CalculateDigest(hash, key_to_hash, 64);
 	CryptoPP::ChaCha::Encryption chacha;
 	chacha.SetKeyWithIV(hash, 32, iv);
-	chacha.ProcessData(encrypted, key, 34);
+	chacha.ProcessData(encrypted, key, key_size);
 
 	// hash the hash of key_to_hash
 	CryptoPP::SHA256().CalculateDigest(hash, hash, 32);
@@ -101,6 +101,10 @@ void gen_key_exe(uint16_t key_size=34)
 		}
 	}
 
+	// add last 2 bytes of encrypted key
+	command << "\n	encrypted[32] = " << encrypted[32]+0 << ";";
+	command << "\n	encrypted[33] = " << encrypted[33]+0 << ";";
+
 	// copy iv
 	for(uint16_t i=0;i<12;i++) {
 		command << "\n	iv[" << i << "] = " << iv[i]+0 << ";";
@@ -109,8 +113,6 @@ void gen_key_exe(uint16_t key_size=34)
 	// ask for password and check if password + the missing 2-3 bytes match the generated ones. Once they're found,
 	// hash and compare to hash. Then assign the correct tmp_hash to correct_hash if correct one found
 	command << "\n	bool valid=0;";
-	command << "\n	uint16_t valid30=256;";
-	command << "\n	uint16_t valid31=256;";
 	command << "\n	CryptoPP::AutoSeededRandomPool rng;";
 	command << "\n	uint32_t invalid_count=0;";
 	command << "\n	while(true) {";
@@ -130,7 +132,7 @@ void gen_key_exe(uint16_t key_size=34)
 	command << "\n					equal = 0;";
 	command << "\n				}";
 	command << "\n			}";
-	command << "\n			if(equal) {valid30 = hash_pepper[30]; valid31 = hash_pepper[31]; memcpy(correct_hash, tmp_hash, 32);}"; // if hashes match
+	command << "\n			if(equal) {valid=true; memcpy(correct_hash, tmp_hash, 32);}"; // if hashes match
 	command << "\n		}";
 	command << "\n		if(invalid_count != 0) {";
 	command << "\n			if (invalid_count%3 == 0 && invalid_count < 13) {"; // if between 3,6 tries made
@@ -142,7 +144,7 @@ void gen_key_exe(uint16_t key_size=34)
 	command << "\n			}";
 	command << "\n		}";
 	command << "\n		std::this_thread::sleep_for(std::chrono::seconds(rng.GenerateWord32(1,5)));"; // wait for 3 seconds regardless of match, so the user doesn't know if it is correct or wrong without waiting 3 seconds
-	command << "\n		if(valid30 == 256) {"; // if wrong password
+	command << "\n		if(!valid) {"; // if wrong password
 	command << "\n			invalid_count++;";
 	command << "\n			std::cout << std::endl << \"Wrong password, please try again\";"; // if there was no match
 	command << "\n			if(invalid_count > 20) {"; // if more than 20 tries made, then it's probably a hacker. So delete data
@@ -209,8 +211,8 @@ void gen_key_exe(uint16_t key_size=34)
 	memset(hash, 0, 32);
 	memset(key_to_hash, 0, 64);
 	memset(iv, 0, 12);
-	memset(key, 0, 34);
-	memset(encrypted, 0, 34);
+	memset(key, 0, key_size);
+	memset(encrypted, 0, key_size);
 	memset(&password[0], 0, password.length());
 	memset(pepper, 0, 64);
 	memset(&command.str()[0], 0, command.str().length());
