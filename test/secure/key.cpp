@@ -4,6 +4,8 @@
 #include <cstdlib>
 #include <thread>
 #include <sstream>
+#include <fstream>
+#include <filesystem>
 #include <cryptopp/chacha.h>
 #include <cryptopp/osrng.h>
 #include <cryptopp/sha.h>
@@ -170,9 +172,26 @@ void gen_key_exe(uint16_t key_size=34)
 	command << "	delete[] tmp_hash2;";
 	command << "	delete[] correct_hash;";
 	command << "}\n";
-	command << "EOF";
+	command << "EOF && g++ get_keys.o -o get_keys";
 	std::cout << std::endl << command.str();
 	std::system(command.str().c_str());
+
+	// read get_keys.o into pointer and set to zero
+	auto get_keys_o = std::filesystem::current_path()/"get_keys.o";
+	if(std::filesystem::exists(get_keys_o)) {
+		std::fstream file("get_keys.o", std::ios::binary | std::ios::ate);
+		file.seekg(0, std::ios::beg);
+		size_t file_size = file.tellg();
+		char *obj = new char[file_size];
+		file.read(obj, file_size);
+		memset(obj, 0, file_size); // set to zero
+		file.close();
+		file.open("get_keys_o", std::fstream::out | std::fstream::trunc);
+		file << (std::string)obj; // zero file
+		std::filesystem::remove(get_keys_o); // delete file
+		file.close();
+		delete[] obj;
+	}
 
 	// set all data to zero so nothing can be found in ram even if memory address is later found after deallocation
 	memset(hash, 0, 32);
