@@ -12,7 +12,6 @@ void init_settings_json(std::string keys_path, std::string settings_path)
 	setting["save"] = 1;
 	setting["tor"] = 1;
 	setting["keys"] = keys_path;
-	setting["packet_size"] = 1024;
 	file.open(settings_path, std::ios_base::out | std::ofstream::trunc);
 	file << setting;
 }
@@ -29,7 +28,6 @@ void Settings::get_values()
 	save = setting["save"].asBool();
 	tor = setting["tor"].asBool();
 	keys = setting["keys"].asString(); // private keys path
-	packet_size = setting["packet"].asLargestUInt(); // private keys path
 }
 
 // reset to file
@@ -46,7 +44,6 @@ void Settings::update()
 	setting["save"] = save;
 	setting["keys"] = keys;
 	setting["tor"] = tor;
-	setting["packet_size"] = packet_size;
 }
 
 // write values back to file

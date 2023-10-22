@@ -154,21 +154,46 @@ namespace Cryptography
 	using default_decipher = CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption; // aes cbc mode
 	using default_hash = CryptoPP::SHA256;
 
-	// uses sha512 algorithm
-	inline uint8_t *hashIpWithSalt(std::string ip)
+	// uses AES256_CBC
+	// TODO: fix keys.cpp, redefine encryption because port key is now different
+	// TODO: keys.cpp, replace format of key with hex
+	// TODO: secure file keys, to do so don't add it to a text file generate a C++ file for it with the key
+	// TODO: define pepper and keep in file keys
+	// TODO replace salt with pepper
+	// TODO: add decryptIpWithPepper()
+	// TODO: finish off securing the connect function in comm.cpp
+	// TODO: let every key use a different salt
+	inline uint8_t *encryptIpWithPepper(std::string ip, uint8_t &out_len)
 	{
-		CryptoPP::SHA512 hashf;
 		uint8_t ip_len = ip.length();
 		uint8_t new_len = salt_len+ip_len;
-		uint8_t *in = new uint8_t[new_len];
-		memcpy(in, ip.c_str(), ip_len); // copy ip
-		memcpy(&in[ip_len], salt, salt_len); // copy salt
+		uint8_t original_length = new_len;
 
-		hashf.Update((const uint8_t*)in, new_len);
-		uint8_t *out = new uint8_t[64]; // SHA512 output is 64 bytes
-		hashf.Final(&out[0]);
-		delete[] in;
+		// pad ip + salt
+		uint8_t pad_size;
+		uint16_t mod = new_len % 16;
+    	pad_size = 16 - mod;
+		if(mod == 0) // if 32-byte unpadded, then pad_size=0, if zero, than dat[length-1] = pad_size would modify the plaintext
+			pad_size += 16;
+    	new_len += pad_size;
+    	uint8_t *in = (uint8_t*)calloc(new_len, 1);
+    	memcpy(&in[pad_size], salt, salt_len); // add salt
+    	memcpy(&in[pad_size+salt_len], ip.c_str(), ip_len); // add ip
+		in[0] = pad_size; // first byte of data is length
+		out_len = new_len<<1; // ct len is double pt len
+
+		uint8_t *out = new uint8_t[out_len];
+		auto cipherf = CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption();
+ 		CryptoPP::StreamTransformationFilter filter(cipherf, new CryptoPP::ArraySink(out, out_len));
+ 		filter.Put(in, new_len);
+ 		filter.MessageEnd();
+		free(in);
 		return out;
+	}
+
+	inline uint8_t *decryptIpWithSalt()
+	{
+		
 	}
 
 	// initialize general protocol data based on protocol number
