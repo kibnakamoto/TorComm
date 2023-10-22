@@ -33,4 +33,4 @@
 torcomm
 
 # test files
-test/*
+test/pad*
