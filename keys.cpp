@@ -81,6 +81,7 @@ uint16_t hex_str_to(std::string str, uint8_t *ptr)
 	return len;
 }
 
+// IPv4 not supported
 void parse_ipv4(uint8_t *out, std::string ip)
 {
 	// assign ip_key
@@ -282,32 +283,14 @@ void Configure::process(std::string keys_path)
 		*str_port = (uint8_t)port;
 		port_len = 1;
 	}
+
 	// encrypt port
 	uint8_t *ct = new uint8_t[port_len];
-	chacha.SetKeyWithIV(key, 32, IVs[PORT]); // 256-bit chacha20 encryption key
+	chacha.SetKeyWithIV(&key[32], 2, IVs[PORT]); // 16-bit chacha20 encryption key
 	chacha.ProcessData(ct, (const CryptoPP::byte *)str_port, port_len);
 	port = ((uint16_t)ct[0] << 8) | ct[1];
 	
 	// encrypt/decrypt tor port
-
-	 // convert tor port to bytearray
-	if (tor_port > 0xff) {
-		str_port[0] = (uint8_t)(tor_port >> 8);
-		str_port[1] = (uint8_t)tor_port;
-		port_len = 2;
-	} else {
-		*str_port = (uint8_t)tor_port;
-		port_len = 1;
-	}
-	delete[] ct;
-	ct = new uint8_t[port_len];
-
-
-	chacha.SetKeyWithIV(key, 32, IVs[TOR_PORT]); // 256-bit chacha20 encryption key
-	chacha.ProcessData(ct, (const CryptoPP::byte *)str_port, port_len);
-	tor_port = ((uint16_t)ct[0] << 8) | ct[1];
-	delete[] str_port;
-	delete[] ct;
 
 	// encrypt/decrypt public ip, all IPs are encrypted byte by byte. the dots aren't encrypted
 	ct = new uint8_t[16];

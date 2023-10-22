@@ -17,7 +17,6 @@ class Settings
 	std::string keys;
 	bool save;
 	bool tor;
-	uint32_t packet_size;
 	Json::Value setting;
 
 	Settings();
