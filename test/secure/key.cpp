@@ -12,9 +12,9 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-result"
-void gen_key_exe()
+void gen_key_exe(uint16_t key_size=34)
 {
-	uint8_t *key = new uint8_t[34];
+	uint8_t *key = new uint8_t[key_size];
 	uint8_t *key_to_hash = new uint8_t[64]; // made up of 32-byte pepper and 32-byte password. Hashed then encryptes the key
 	uint8_t *pepper = new uint8_t[64]; // copy of pepper
 	uint8_t *iv = new uint8_t[12];
@@ -66,17 +66,21 @@ void gen_key_exe()
 	command << "\n#include <cstdlib>";
 	command << "\n#include <chrono>";
 	command << "\n#include <thread>";
+	command << "\n#include <fstream>";
+	command << "\n#include <filesystem>";
 	command << "\n#include <cryptopp/chacha.h>";
 	command << "\n#include <cryptopp/osrng.h>";
 	command << "\n#include <cryptopp/sha.h>";
 	command << "\nint main() {";
-	command << "	uint8_t *encrypted = new uint8_t[34];";
-	command << "	uint8_t *decrypted = new uint8_t[34];";
+	command << "	uint8_t *encrypted = new uint8_t[" << key_size << "];";
+	command << "	uint8_t *decrypted = new uint8_t[" << key_size << "];";
 	command << "	uint8_t *hash_pepper = new uint8_t[64];";
 	command << "	uint8_t *hash = new uint8_t[32];";
 	command << "	uint8_t *iv = new uint8_t[12];";
 	command << "	uint8_t *tmp_hash = new uint8_t[32];";
+	command << "	uint8_t *tmp_hash2 = new uint8_t[32];";
 	command << "	uint8_t *correct_hash = new uint8_t[32];";
+	command << "	std::string password;";
 
 	// copy values
 	for(uint16_t i=0;i<32;i++) {
@@ -93,13 +97,68 @@ void gen_key_exe()
 		command << "	iv[" << i << "] = " << iv[i]+0 << ";";
 	}
 
+	// ask for password and check if password + the missing 2-3 bytes match the generated ones. Once they're found,
+	// hash and compare to hash. Then assign the correct tmp_hash to correct_hash if correct one found
+	command << "	bool valid=0;";
+	command << "	uint16_t valid30=256;";
+	command << "	uint16_t valid31=256;";
+	command << "	CryptoPP::AutoSeededRandomPool rng;";
+	command << "	uint32_t invalid_count=0;";
+	command << "	while(true) {";
+	command << "		std::cout << std::endl << \"Input password: \";";
+	command << "		std::cin >> password;";
+	command << "		for(int i=0;i<password.length();i++) {"; // use password in hash_pepper
+	command << "			hash_pepper[i+32] ^= password[i];";
+	command << "		}";
+	command << "		for(uint16_t i=0;i<0xffff;i++) {"; // guess the 2 missing bytes
+	command << "			hash_pepper[31] = i >> 8;"; // guess first byte
+	command << "			hash_pepper[30] = i & 0xff;"; // guess second byte
+	command << "			CryptoPP::SHA256().CalculateDigest(tmp_hash, hash_pepper, 64);";
+	command << "			CryptoPP::SHA256().CalculateDigest(tmp_hash2, tmp_hash, 32);"; // re-hash and compare
+	command << "			bool equal = 1;";
+	command << "			for(uint16_t j=0;i<32;j++) {";
+	command << "				if(tmp_hash2[j] != hash[j]) {";
+	command << "					equal = 0;";
+	command << "				}";
+	command << "			}";
+	command << "			if(equal) {valid30 = hash_pepper[30]; valid31 = hash_pepper[31]; memcpy(correct_hash, tmp_hash, 32);}"; // if hashes match
+	command << "		}";
+	command << "		if (invalid_count%3 == 0 && invalid_count < 13) {"; // if between 3,6 tries made
+	command << "			std::cout << std::endl << \"wait for 10 seconds, too many tries\";"; // if there was no match
+	command << "			std::this_thread::sleep_for(std::chrono::seconds(10));";
+	command << "		} else if (invalid_count%5 == 0 && invalid_count > 13) { ";
+	command << "			std::cout << std::endl << \"wait for 30 seconds, too many tries\";"; // if there was no match
+	command << "			std::this_thread::sleep_for(std::chrono::seconds(30));";
+	command << "		}";
+	command << "		std::this_thread::sleep_for(std::chrono::seconds(rng.GenerateWord32(1,5)));"; // wait for 3 seconds regardless of match, so the user doesn't know if it is correct or wrong without waiting 3 seconds
+	command << "		if(valid30 == 256) {"; // if wrong password
+	command << "			invalid_count++;";
+	command << "			std::cout << std::endl << \"Wrong password, please try again\";"; // if there was no match
+	command << "			if(invalid_count > 20) {"; // if more than 20 tries made, then it's probably a hacker. So delete data
+	// command << "				std::filesystem::remove_all(std::filesystem::current_path);"; // remove everything in directory TODO: uncomment when after testing
+	command << "			}";
+	command << "		} else {"; // if correct password
+	command << "			std::cout << std::endl << \"Correct password.\";";
+	command << "			CryptoPP::ChaCha::Encryption chacha;"; // decrypt key
+	command << "			chacha.SetKeyWithIV(correct_hash, 32, iv);";
+	command << "			chacha.ProcessData(decrypted, encrypted, " << key_size << ");";
+	command << "			std::ofstream file(\"keys\");"; // create a keys text file and add keys
+	command << "			for(int i=0;i<" << key_size << ";i++) {"; // create a keys text file and add keys
+	command << "				file << std::setfill('0') << std::setw(2) << decrypted[i]+0;";
+	command << "			}";
+	command << "			file.close();";
+	command << "			break;";
+	command << "		}";
+	command << "	}";
+
 	// set all values in ram to zero
-	command << "	memset(encrypted, 0, 34);";
-	command << "	memset(decrypted, 0, 34);";
+	command << "	memset(encrypted, 0, " << key_size << ");";
+	command << "	memset(decrypted, 0, " << key_size << ");";
 	command << "	memset(hash_pepper, 0, 64);";
 	command << "	memset(hash, 0, 32);";
 	command << "	memset(iv, 0, 12);";
 	command << "	memset(tmp_hash, 0, 32);";
+	command << "	memset(tmp_hash2, 0, 32);";
 	command << "	memset(correct_hash, 0, 32);";
 
 	command << "	delete[] encrypted;";
@@ -108,9 +167,11 @@ void gen_key_exe()
 	command << "	delete[] hash;";
 	command << "	delete[] iv;";
 	command << "	delete[] tmp_hash;";
+	command << "	delete[] tmp_hash2;";
 	command << "	delete[] correct_hash;";
 	command << "}\n";
 	command << "EOF";
+	std::cout << std::endl << command.str();
 	std::system(command.str().c_str());
 
 	// set all data to zero so nothing can be found in ram even if memory address is later found after deallocation
