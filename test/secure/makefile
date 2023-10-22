@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++23 -Wall -pedantic -Wextra -O4
+CXXFLAGS = -std=c++23 -Wall -pedantic -Wextra -O4 -g
 CRYPTOPP_FLAGS = -Iinclude -Llib -lcryptopp -lpthread
 
 all:
