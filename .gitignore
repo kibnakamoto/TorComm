@@ -34,3 +34,5 @@ torcomm
 
 # test files
 test/pad*
+security/get_keys
+security/keys
