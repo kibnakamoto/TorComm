@@ -4,12 +4,30 @@
 #include <string>
 #include <stdint.h>
 #include <iomanip>
+#include <optional>
 
 #include <jsoncpp/json/json.h>
 
-void new_port_ip_key();
+// read keys from file
+struct LocalKeys
+{
+	uint8_t* keys;
+	uint16_t key_len;
+	uint16_t pepper_len;
+	uint16_t ports_key_len; 
+	uint16_t keys_len; // total length of keys, length of keys pointer
 
-void get_port_ip_key(uint8_t *key);
+	LocalKeys(std::string keys_path);
+
+	~LocalKeys()
+	{
+		delete[] keys;
+	}
+
+	uint8_t *get_pepper();
+	uint8_t *get_key();
+	uint8_t *get_port_key();
+};
 
 std::string to_hex_str(uint8_t *ptr, uint16_t ptr_len);
 
@@ -48,6 +66,9 @@ class Configure
 	public:
 		uint16_t port;
 		uint16_t tor_port;
+			
+		// not relating to specific protocols. This is just for communications
+
 		std::string public_ip;
 		std::string *other_public_ips; // other ips
 		uint32_t node_count;

@@ -34,6 +34,7 @@ Cryptography::ProtocolData::ProtocolData(uint8_t protocol_no)
 
 void Cryptography::ProtocolData::init(uint8_t protocol_no)
 {
+	
 	// seperate protocol and curve
 	protocol = (CommunicationProtocol)(protocol_no - protocol_no % LAST);
 	curve = (Curves)(protocol_no % LAST);
@@ -368,7 +369,7 @@ Cryptography::Cipher::Cipher(ProtocolData &protocol, uint8_t *key, uint8_t *iv) 
 // set key with iv
 void Cryptography::Cipher::set_key(auto cipher)
 {
-	cipher.setKeyWithIv(key, protocol.key_size, iv, protocol.iv_size);
+	cipher.SetKeyWithIV(key, protocol.key_size, iv, protocol.iv_size);
 }
 
 // cipher: output of protocol.get_cipher()

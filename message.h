@@ -10,6 +10,7 @@
 #include <concepts>
 #include <stdlib.h>
 #include <utility>
+#include <filesystem>
 #include <variant>
 
 #include <cryptopp/cryptlib.h>
@@ -29,6 +30,7 @@
 #include <jsoncpp/json/json.h>
 
 #include "settings.h"
+#include "keys.h"
 #include "errors.h"
 
 // get current time
@@ -155,21 +157,21 @@ namespace Cryptography
 	using default_hash = CryptoPP::SHA256;
 
 	// uses AES256_CBC
-	// TODO: fix keys.cpp, redefine encryption because port key is now different
-	// TODO: keys.cpp, replace format of key with hex
+	// TODO: fix keys.cpp, redefine encryption because port key is now different - DONE
+	// TODO: keys.cpp, replace format of key with hex - DONE
 	// TODO: secure file keys, to do so don't add it to a text file generate a C++ file for it with the key
-	// TODO: define pepper and keep in file keys
 	// TODO replace salt with pepper
-	// TODO: add decryptIpWithPepper()
 	// TODO: finish off securing the connect function in comm.cpp
 	// TODO: let every key use a different salt
-	inline uint8_t *encryptIpWithPepper(std::string ip, uint8_t &out_len)
+	// TODO: add decryptIpWithPepper()
+	// key: path to keys file
+	inline uint8_t *encrypt_ip_with_pepper(std::string key_path, std::string ip, uint8_t &out_len, uint8_t *iv)
 	{
+		LocalKeys local_key(key_path); // get local key parameters like key and length
 		uint8_t ip_len = ip.length();
-		uint8_t new_len = salt_len+ip_len;
-		uint8_t original_length = new_len;
+		uint8_t new_len = local_key.pepper_len+ip_len;
 
-		// pad ip + salt
+		// pad ip + pepper
 		uint8_t pad_size;
 		uint16_t mod = new_len % 16;
     	pad_size = 16 - mod;
@@ -177,13 +179,19 @@ namespace Cryptography
 			pad_size += 16;
     	new_len += pad_size;
     	uint8_t *in = (uint8_t*)calloc(new_len, 1);
-    	memcpy(&in[pad_size], salt, salt_len); // add salt
-    	memcpy(&in[pad_size+salt_len], ip.c_str(), ip_len); // add ip
+    	memcpy(&in[pad_size], local_key.get_pepper(), local_key.pepper_len); // add pepper
+    	memcpy(&in[pad_size+local_key.pepper_len], ip.c_str(), ip_len); // add ip
 		in[0] = pad_size; // first byte of data is length
 		out_len = new_len<<1; // ct len is double pt len
+		
+		// generate IV
+		CryptoPP::AutoSeededRandomPool rng;
+		rng.GenerateBlock(iv, CryptoPP::AES::BLOCKSIZE); // 16-byte IV
 
+		// encrypt using AES-256-CBC
 		uint8_t *out = new uint8_t[out_len];
-		auto cipherf = CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption();
+		CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption cipherf;
+		cipherf.SetKeyWithIV(local_key.keys, local_key.key_len, iv, CryptoPP::AES::BLOCKSIZE);
  		CryptoPP::StreamTransformationFilter filter(cipherf, new CryptoPP::ArraySink(out, out_len));
  		filter.Put(in, new_len);
  		filter.MessageEnd();
@@ -191,9 +199,78 @@ namespace Cryptography
 		return out;
 	}
 
-	inline uint8_t *decryptIpWithSalt()
+	// key_path: path to keys file
+	// ct_ip: ciphertext of ip
+	// ct_ip_len: length of ct_ip
+	// iv: 16-byte iv
+	inline std::string decrypt_ip_with_pepper(std::string key_path, uint8_t *ct_ip, uint16_t ct_ip_len, uint8_t *iv)
 	{
+		std::string ip;
+		LocalKeys local_key(key_path); // get local key parameters like key and length
 		
+		// encrypt using AES-256-CBC
+		CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption decipherf;
+		decipherf.SetKeyWithIV(local_key.keys, local_key.key_len, iv, CryptoPP::AES::BLOCKSIZE);
+ 		CryptoPP::StreamTransformationFilter filter(decipherf, new CryptoPP::StringSink(ip));
+ 		filter.Put(ct_ip, ct_ip_len);
+ 		filter.MessageEnd();
+	
+		// remove padding
+		// ip[0] is pad size
+		ip = ip.substr(ip[0], ip.length()-ip[0]);
+		return ip;
+	}
+
+	// cryptographically secure file move. This means that it will set the file data to zero and write
+	// back to file. And then transfer the data to the specified new directory. MUST use for moving keys file
+	//
+	// src_path: source file path
+	// dest_path: destination file path, before calling function, make sure dest_path is empty or doesn't exist
+	inline void move_file(std::string src_path, std::string dest_path)
+	{
+		auto src_file = std::filesystem::path(src_path);
+
+		// read get_keys.o into pointer and set to ones
+		if(std::filesystem::exists(src_file)) {
+			std::fstream file(src_path, std::ios::ate);
+			file.seekg(0, std::ios::beg);
+			size_t file_size = std::filesystem::file_size(src_path);
+			char *obj = new char[file_size];
+			file.read(obj, file_size);
+
+			// create new file with new data
+			std::fstream dest_file(dest_path, std::ios::out);
+			dest_file << obj;
+			dest_file.close();
+
+			memset(obj, 0xff, file_size); // set to ones, not zeros, because zeros might not write, because there might be optimizations around writing zeros.
+			file.close();
+			file.open(src_path, std::fstream::out | std::fstream::trunc);
+			file << (const char*)obj; // set all bits
+			file.close();
+			delete[] obj;
+		}
+	}
+
+	// cryptographically secure file deletion, this means to set all file data to one, write back, then delete
+	inline void delete_file(std::string path)
+	{
+		if(std::filesystem::exists(path)) {
+			std::fstream file(path, std::ios::ate);
+			file.seekg(0, std::ios::beg);
+			size_t file_size = std::filesystem::file_size(path);
+			char *obj = new char[file_size];
+			file.read(obj, file_size);
+			memset(obj, 0xff, file_size); // set to ones, not zeros, because zeros might not write, because there might be optimizations around writing zeros.
+
+			file.close();
+			file.open(path, std::fstream::out | std::fstream::trunc);
+			file << (const char*)obj;
+			file.close();
+			std::filesystem::remove(path); // delete file
+
+			delete[] obj;
+		}
 	}
 
 	// initialize general protocol data based on protocol number

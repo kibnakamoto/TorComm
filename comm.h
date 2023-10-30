@@ -2,10 +2,13 @@
 #define COMM_H
 
 #include <boost/asio/buffer.hpp>
+#include <boost/asio/ip/address_v6.hpp>
+#include <boost/system/error_code.hpp>
 #include <stdint.h>
 #include <string>
 
 #include <boost/asio.hpp>
+#include <cryptopp/aes.h>
 
 #include "message.h"
 #include "errors.h"
@@ -88,6 +91,156 @@ class PacketParser
 // 	T msg;
 // };
 
+// blocked ips
+class Blocked
+{
+	public:
+		std::vector<uint8_t *> ips; // encrypted
+		std::vector<uint8_t> ip_lengths; // length of ips
+		std::vector<uint8_t *> ivs; // iv of blocked ips
+		std::string keys_path; // path to keys file
+		std::string blocked_path; // path to blocked file
+
+		// blocked_path: path to file blocked
+		Blocked(std::string keys_path, std::string blocked_path)
+		{
+			this->blocked_path = blocked_path;
+			this->keys_path = keys_path;
+			read();
+		}
+
+		Blocked() = default;
+
+		// read data from blocked file
+		void read()
+		{
+			std::ifstream file(blocked_path);
+			if(file.peek() == std::ifstream::traits_type::eof()) { // if file is empty
+				return;
+			}
+
+			// delete data if not empty
+			if(!ips.empty()) {
+				for(size_t i=0;i<ips.size();i++) {
+					delete[] ips[i];
+					delete[] ivs[i];
+				}
+				ips.clear();
+				ip_lengths.clear();
+				ivs.clear();
+			}
+
+			std::string line;
+			while(std::getline(file, line)) {
+				size_t del = line.find(" ");
+				if(del == std::string::npos) {
+					continue; // line is corrupt, doesn't have space meaning isn't in the right format (ct iv)
+				}
+				std::string ip = line.substr(0, del);
+				std::string iv = line.substr(del, CryptoPP::AES::BLOCKSIZE<<1);
+
+				// convert hex string to pointer
+				uint16_t ip_len = ip.length()>>1;
+				uint8_t *ip_ptr = new uint8_t[ip_len];
+				uint8_t *iv_ptr = new uint8_t[CryptoPP::AES::BLOCKSIZE];
+				hex_str_to(ip, ip_ptr);
+
+				hex_str_to(iv, iv_ptr);
+				ips.push_back(ip_ptr);
+				ivs.push_back(iv_ptr);
+				ip_lengths.push_back(ip_len);
+			}
+			file.close();
+		}
+
+		// destructor
+		~Blocked()
+		{
+			for(size_t i=0;i<ips.size();i++) {
+				delete[] ips[i];
+				delete[] ivs[i];
+			}
+		}
+
+		// block a new ip
+		void block(std::string ip)
+		{
+			uint8_t blocked_len;
+			uint8_t *iv;
+			uint8_t *encrypted = Cryptography::encrypt_ip_with_pepper(keys_path, ip, blocked_len, iv);
+			std::fstream file(blocked_path, std::ios_base::in | std::ios_base::out | std::ios_base::app);
+
+			if(file.peek() != std::ifstream::traits_type::eof()) { // if file is not empty
+				file << "\n";
+			}
+
+			// add to file
+			for(int i=0;i<blocked_len;i++) {
+				file << std::hex << std::setw(2) << std::setfill('0') << encrypted[i]+0;
+			}
+			file << " ";
+			for(int i=0;i<CryptoPP::AES::BLOCKSIZE;i++) {
+				file << std::hex << std::setw(2) << std::setfill('0') << iv[i]+0;
+			}
+
+			// add to vectors
+			ips.push_back(encrypted);
+			ivs.push_back(iv);
+			file.close();
+		}
+
+		// check if ip is blocked
+		// ip: plaintext
+		bool is_blocked(std::string ip)
+		{
+			auto ip_addr = boost::asio::ip::make_address_v6(ip);
+			for(uint16_t i=0;i<ips.size();i++) {
+				// decrypt ip from ips
+				auto decrypted = boost::asio::ip::make_address_v6(Cryptography::decrypt_ip_with_pepper(keys_path, ips[i], ip_lengths[i], ivs[i]));
+
+				// if decrypted equals ip
+				if(decrypted == ip_addr) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		// unblock an ip
+		// return: if was blocked
+		bool unblock(std::string ip)
+		{
+			auto ip_addr = boost::asio::ip::make_address_v6(ip);
+			for(uint16_t i=0;i<ips.size();i++) {
+				// decrypt ip from ips
+				auto decrypted = boost::asio::ip::make_address_v6(Cryptography::decrypt_ip_with_pepper(keys_path, ips[i], ip_lengths[i], ivs[i]));
+
+				// if decrypted equals ip
+				if(decrypted == ip_addr) {
+					// remove ip
+					ips.erase(ips.begin()+i);
+					ip_lengths.erase(ip_lengths.begin()+i);
+					ivs.erase(ivs.begin()+i);
+
+					// remove from file
+					std::fstream file(blocked_path, std::ios_base::app | std::ios_base::out);
+					std::string line;
+					while(std::getline(file, line)) {
+
+						// check if ip and iv matches
+						size_t index = line.find(to_hex_str(ips[i], ip_lengths[i]) + to_hex_str(ivs[i], CryptoPP::AES::BLOCKSIZE));
+						if(index != std::string::npos) {
+							line.clear();
+							file.close();
+							return true;
+						}
+					}
+				}
+			}
+			return false;
+		}
+};
+
 // P2P has Client and Server on all connections
 class P2P
 {
@@ -97,9 +250,12 @@ class P2P
 		boost::asio::ip::tcp::acceptor listener;
 		uint8_t *buffer;
 		boost::asio::ip::v6_only ipv6_option{true};
-		P2P(uint16_t port) : listener(boost::asio::ip::tcp::acceptor(io_context, {{}, port}, true))
+		std::string local_key_path; // keys file
+		Blocked blocked;
+
+		P2P(uint16_t port, Blocked blocked) : listener(boost::asio::ip::tcp::acceptor(io_context, {{}, port}, true))
 		{
-			
+			this->blocked = blocked;
 		}
 
 		// listen to oncoming connections
@@ -108,33 +264,25 @@ class P2P
     		listener.listen();
 		}
 
-		// blocked_ips: the blocked ips that shouldn't connect. It's not their IP but the hash of their ip
-		void accept(std::vector<uint8_t *> blocked_ips)
+		void accept()
 		{
 			std::ofstream file(NETWORK_LOG_FILE, std::fstream::in | std::fstream::out | std::fstream::app);
         	listener.async_accept([&](boost::system::error_code const& ec, boost::asio::ip::tcp::socket sock) {
-			if (!ec) {
-				sock.set_option(ipv6_option);
-				uint8_t *sock_adr = Cryptography::hashIpWithSalt(sock.remote_endpoint().address().to_string()); // hash the ipv6 address with Cryptography::salt
-				if(std::any_of(blocked_ips.begin(), blocked_ips.end(), [sock_adr](uint8_t *blocked_ip)
-				   {
-					for(uint8_t i=0;i<64;i++) { // 64 byte hash comparision. If equal
-						if(sock_adr[i] != blocked_ip[i]) {
-							return false; // TODO: Is the conditional return prone to side-channel attacks?
+				if (!ec) {
+					sock.set_option(ipv6_option);
+
+					// if ip address blocked, don't add as a client
+					if(blocked.is_blocked(sock.remote_endpoint().address().to_string())) {
+						sock.close(); // stop socket because it's blocked
+						if(log_network_issues) {
+							file << "\nconnection request denied (in P2P::accept) = TIME: "
+								 << get_time(); // TODO: don't save ips use salt and hash the blocked ip using sha512. and compare the hashes on each request
 						}
+					} else {
+				    	clients.push_back(std::move(sock));
 					}
-					return true;
-				   })) {
-					if(log_network_issues) {
-						file << "\nblocked ip connection request (in P2P::accept) = TIME: "
-							 << get_time(); // TODO: don't save ips use salt and hash the blocked ip using sha512. and compare the hashes on each request
-					}
-				} else {
-			    	clients.push_back(std::move(sock));
+				    accept();
 				}
-				delete[] sock_adr;
-			    accept(blocked_ips);
-			}
         	});
 			file.close();
 		}
