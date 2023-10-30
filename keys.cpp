@@ -1,3 +1,4 @@
+#include <cryptopp/filters.h>
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -14,6 +15,7 @@
 #include <cryptopp/config_int.h>
 #include <cryptopp/chacha.h>
 #include <cryptopp/osrng.h>
+#include <cryptopp/hex.h>
 
 // Generate keys, and IVs for encrypting ports and IPs in configure.json in all sessions
 // encrypt using ChaCha20 because it is a stream cipher, encrypt port and ip using private key
@@ -22,43 +24,50 @@
 #define DEFAULT_PORT 8000
 #define PORT_TOR 9005
 
-// Before writing to file, make sure to ask user to backup all keys before replacing
-// Make sure to decrypt all IPs and ports before replacing file
-// Generate new key in keys.txt file
-void new_port_ip_key(Settings settings)
-{
-	std::ofstream file;
-    CryptoPP::AutoSeededRandomPool rng;
+// TODO: in main file, make sure to design a secure join option, where a connection can be made where they request that you don't save ips. A secure connection mode where nothing is saved. Not even encrypted data. This means make config file optional
 
-	file.open(settings.keys, std::ios_base::out);
-
-	uint8_t *k = new uint8_t[32];
-	rng.GenerateBlock(k, 32);
-	for(uint8_t i=0;i<32;i++) {
-		file << k[i]+0;
-		if(i !=31)
-			file << ".";
-	}
-}
-
-// read key from keys.txt file
-void get_port_ip_key(uint8_t *key, std::string keys_path)
+// read from keys file
+LocalKeys::LocalKeys(std::string keys_path)
 {
 	std::ifstream keys_file(keys_path);
-	std::string keys;
-	std::getline(keys_file, keys);
-	size_t keys_dot;
-	
-	uint8_t i=0;
-	while ((keys_dot = keys.find('.')) != std::string::npos)
-	{
-		uint8_t byte = std::stoi(keys.substr(0, keys_dot));
-		key[i] = byte;
+	std::string key;
+	std::getline(keys_file, key);
 
-	    keys.erase(0, keys_dot + 1);
-		i++;
-	}
-	key[31] = std::stoi(keys);
+	// get the lengths of key, pepper, port, and total length
+	std::stringstream ss;
+	std::string keys_lengths;
+	std::getline(keys_file, keys_lengths);
+
+	ss << std::hex << keys_lengths.substr(0, 4);
+	ss >> key_len;
+	ss.clear();
+
+	ss << std::hex << keys_lengths.substr(4, 4);
+	ss >> ports_key_len;
+	ss.clear();
+
+	ss << std::hex << keys_lengths.substr(8, 4);
+	ss >> pepper_len;
+	
+	keys_len = key_len + ports_key_len + pepper_len;
+	keys = new uint8_t[keys_len];
+	
+	CryptoPP::StringSource s(key, true, new CryptoPP::HexDecoder(new CryptoPP::ArraySink(keys, keys_len)));
+}
+
+uint8_t *LocalKeys::get_pepper()
+{
+	return &keys[key_len+ports_key_len];
+}
+uint8_t *LocalKeys::get_key()
+{
+	return keys;
+}
+
+uint8_t *LocalKeys::get_port_key()
+{
+	return &keys[key_len];
+	
 }
 
 std::string to_hex_str(uint8_t *ptr, uint16_t ptr_len)
@@ -146,6 +155,7 @@ Configure::Configure(std::string configpath)
 // set config, this is the default thing to use to make sure to NOT write to file unless Json::Value is encrypted
 Configure::Configure(std::string configpath, Json::Value _config)
 {
+
 	config_path = configpath;
 	config = _config;
 	std::fstream file(config_path);
@@ -158,6 +168,7 @@ Configure::Configure(std::string configpath, Json::Value _config)
 	get_values();
 }
 
+// get the number of peers in the communication channel.
 uint32_t Configure::get_node_count()
 {
 	uint32_t i=0;
@@ -263,8 +274,8 @@ void Configure::encrypt(std::string keys_path)
 // return config, call config.write_to_file() to save values
 void Configure::process(std::string keys_path)
 {
-	uint8_t *key = new uint8_t[32];
-	get_port_ip_key(key, keys_path); // assign key from file to array
+	LocalKeys local_key(keys_path);
+	uint8_t *key = new uint8_t[local_key.keys_len];
 
 	// encrypt all values in configure
 	CryptoPP::ChaCha::Encryption chacha;
@@ -286,17 +297,15 @@ void Configure::process(std::string keys_path)
 
 	// encrypt port
 	uint8_t *ct = new uint8_t[port_len];
-	chacha.SetKeyWithIV(&key[32], 2, IVs[PORT]); // 16-bit chacha20 encryption key
-	chacha.ProcessData(ct, (const CryptoPP::byte *)str_port, port_len);
+	chacha.SetKeyWithIV(&key[local_key.key_len], local_key.ports_key_len, IVs[PORT]); // 16-bit chacha20 encryption key
+	chacha.ProcessData(ct, str_port, port_len);
 	port = ((uint16_t)ct[0] << 8) | ct[1];
 	
-	// encrypt/decrypt tor port
-
 	// encrypt/decrypt public ip, all IPs are encrypted byte by byte. the dots aren't encrypted
 	ct = new uint8_t[16];
 	uint8_t *ip = new uint8_t[16];
 	parse_ipv6(ip, public_ip);
-	chacha.SetKeyWithIV(key, 32, IVs[PUBLIC]); // 256-bit chacha20 encryption key
+	chacha.SetKeyWithIV(key, local_key.key_len, IVs[PUBLIC]); // 256-bit chacha20 encryption key
 	public_ip = "";
 	for(uint8_t i=0;i<8;i++) {
 		std::stringstream ss;
@@ -315,7 +324,7 @@ void Configure::process(std::string keys_path)
 	// encrypt/decrypt public ip 1 (other device)
 	for(uint32_t n=0;n<node_count;n++) {
 		parse_ipv6(ip, other_public_ips[n]);
-		chacha.SetKeyWithIV(key, 32, IVs[n+PUBLIC_1]); // 256-bit chacha20 encryption key
+		chacha.SetKeyWithIV(key, local_key.key_len, IVs[n+PUBLIC_1]); // 256-bit chacha20 encryption key
 		other_public_ips[n] = "";
 		for(uint8_t i=0;i<8;i++) {
 			std::stringstream ss;
@@ -372,10 +381,9 @@ Json::Value init_configure_json(std::string config_path, std::string keys_path)
 // 	try {
 // 		global_settings = Settings();
 // 		global_settings.get_values();
-// 		global_packet_size = global_settings.packet_size;
 // 	} catch(Json::RuntimeError &e)
 // 	{
-// 		init_settings_json("./keys.txt");
+// 		init_settings_json("security/keys.txt");
 // 		global_settings = Settings();
 // 		global_settings.get_values();
 // 		global_packet_size = global_settings.packet_size;

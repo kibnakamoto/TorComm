@@ -16,7 +16,7 @@
 // key_size: size of key, includes 2 byte port key, 32-byte key, and 32-byte pepper
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-result"
-void gen_key_exe(uint8_t *key_value=nullptr, uint16_t key_size=68)
+void gen_key_exe(uint8_t *key_value=nullptr, uint16_t key_size=68, uint16_t enc_key_size=32, uint16_t pepper_size=32, uint16_t port_key_size=2)
 {
 	uint8_t *key = new uint8_t[key_size];
 	uint8_t *key_to_hash = new uint8_t[64]; // made up of 32-byte pepper and 32-byte password. Hashed then encryptes the key
@@ -163,6 +163,9 @@ void gen_key_exe(uint8_t *key_value=nullptr, uint16_t key_size=68)
 	command << "\n			for(int i=0;i<" << key_size << ";i++) {"; // create a keys text file and add keys
 	command << "\n				file << std::setfill('0') << std::hex << std::setw(2) << decrypted[i]+0;";
 	command << "\n			}";
+	command << "\n			file << \"\\n\" << std::setfill('0') << std::hex << std::setw(4) << " << enc_key_size << ";";
+	command << "\n			file  		<< std::setfill('0') << std::hex << std::setw(4) << " << port_key_size << ";";
+	command << "\n			file  		<< std::setfill('0') << std::hex << std::setw(4) << " << pepper_size << ";";
 	command << "\n			file.close();";
 	command << "\n			break;";
 	command << "\n		}";
@@ -191,7 +194,7 @@ void gen_key_exe(uint8_t *key_value=nullptr, uint16_t key_size=68)
 	std::system(command.str().c_str());
 	std::system("g++ get_keys.o -o get_keys -Iinclude -Llib -lcryptopp -lpthread");
 
-	// read get_keys.o into pointer and set to zero
+	// read get_keys.o into pointer and set to ones
 	auto get_keys_o = std::filesystem::current_path()/"get_keys.o";
 	if(std::filesystem::exists(get_keys_o)) {
 		std::fstream file("get_keys.o", std::ios::binary | std::ios::ate);
@@ -199,10 +202,10 @@ void gen_key_exe(uint8_t *key_value=nullptr, uint16_t key_size=68)
 		size_t file_size = std::filesystem::file_size("get_keys.o");
 		char *obj = new char[file_size];
 		file.read(obj, file_size);
-		memset(obj, 0, file_size); // set to zero
+		memset(obj, 0xff, file_size); // set to ones
 		file.close();
 		file.open("get_keys.o", std::fstream::out | std::fstream::trunc);
-		file << (std::string)obj; // zero file
+		file << (const char*)obj; // set file data
 		std::filesystem::remove(get_keys_o); // delete file
 		file.close();
 		delete[] obj;
