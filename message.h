@@ -156,49 +156,6 @@ namespace Cryptography
 	using default_decipher = CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption; // aes cbc mode
 	using default_hash = CryptoPP::SHA256;
 
-	// uses AES256_CBC
-	// TODO: fix keys.cpp, redefine encryption because port key is now different - DONE
-	// TODO: keys.cpp, replace format of key with hex - DONE
-	// TODO: secure file keys, to do so don't add it to a text file generate a C++ file for it with the key
-	// TODO replace salt with pepper
-	// TODO: finish off securing the connect function in comm.cpp
-	// TODO: let every key use a different salt
-	// TODO: add decryptIpWithPepper()
-	// key: path to keys file
-	inline uint8_t *encrypt_ip_with_pepper(std::string key_path, std::string ip, uint8_t &out_len, uint8_t *iv)
-	{
-		LocalKeys local_key(key_path); // get local key parameters like key and length
-		uint8_t ip_len = ip.length();
-		uint8_t new_len = local_key.pepper_len+ip_len;
-
-		// pad ip + pepper
-		uint8_t pad_size;
-		uint16_t mod = new_len % 16;
-    	pad_size = 16 - mod;
-		if(mod == 0) // if 32-byte unpadded, then pad_size=0, if zero, than dat[length-1] = pad_size would modify the plaintext
-			pad_size += 16;
-    	new_len += pad_size;
-    	uint8_t *in = (uint8_t*)calloc(new_len, 1);
-    	memcpy(&in[pad_size], local_key.get_pepper(), local_key.pepper_len); // add pepper
-    	memcpy(&in[pad_size+local_key.pepper_len], ip.c_str(), ip_len); // add ip
-		in[0] = pad_size; // first byte of data is length
-		out_len = new_len<<1; // ct len is double pt len
-		
-		// generate IV
-		CryptoPP::AutoSeededRandomPool rng;
-		rng.GenerateBlock(iv, CryptoPP::AES::BLOCKSIZE); // 16-byte IV
-
-		// encrypt using AES-256-CBC
-		uint8_t *out = new uint8_t[out_len];
-		CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption cipherf;
-		cipherf.SetKeyWithIV(local_key.keys, local_key.key_len, iv, CryptoPP::AES::BLOCKSIZE);
- 		CryptoPP::StreamTransformationFilter filter(cipherf, new CryptoPP::ArraySink(out, out_len));
- 		filter.Put(in, new_len);
- 		filter.MessageEnd();
-		free(in);
-		return out;
-	}
-
 	// key_path: path to keys file
 	// ct_ip: ciphertext of ip
 	// ct_ip_len: length of ct_ip
@@ -208,17 +165,62 @@ namespace Cryptography
 		std::string ip;
 		LocalKeys local_key(key_path); // get local key parameters like key and length
 		
+		
 		// encrypt using AES-256-CBC
 		CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption decipherf;
 		decipherf.SetKeyWithIV(local_key.keys, local_key.key_len, iv, CryptoPP::AES::BLOCKSIZE);
- 		CryptoPP::StreamTransformationFilter filter(decipherf, new CryptoPP::StringSink(ip));
- 		filter.Put(ct_ip, ct_ip_len);
+ 		CryptoPP::StreamTransformationFilter filter(decipherf, new CryptoPP::StringSink(ip), CryptoPP::StreamTransformationFilter::NO_PADDING);
+ 		filter.Put(ct_ip, ct_ip_len>>1);
  		filter.MessageEnd();
 	
-		// remove padding
+		// remove padding and pepper
 		// ip[0] is pad size
-		ip = ip.substr(ip[0], ip.length()-ip[0]);
+		ip = ip.erase(0, ip[0]+local_key.pepper_len);
+		
 		return ip;
+	}
+
+	// TODO: MAJOR BUG DETECTED: ADD NO PADDING OPTION TO ALL AES ENCRYPTORS/DECRYPTORS. ALSO CHANGE PT SIZE TO CT SIZE ON PUT FUNCTION CALL
+	// uses AES256_CBC
+	// TODO: fix keys.cpp, redefine encryption because port key is now different - DONE
+	// TODO Don't reuse salt for HKDF
+	// TODO: finish off securing the connect function in comm.cpp
+	// TODO: let every key use a different salt
+	// key: path to keys file
+	inline uint8_t *encrypt_ip_with_pepper(std::string key_path, std::string ip, uint16_t &out_len, uint8_t *iv)
+	{
+		LocalKeys local_key(key_path); // get local key parameters like key and length
+		uint16_t ip_len = ip.length();
+		uint16_t new_len = local_key.pepper_len+ip_len;
+
+		// pad ip + pepper
+		uint8_t pad_size;
+		uint8_t mod = new_len % 16;
+    	pad_size = 16 - mod;
+		if(mod == 0) // if 32-byte unpadded, then pad_size=0, if zero, than dat[length-1] = pad_size would modify the plaintext
+			pad_size += 16;
+    	new_len += pad_size;
+    	uint8_t *in = new uint8_t[new_len];
+		memset(in, 0, pad_size); // pad
+    	memcpy(&in[pad_size], local_key.get_pepper(), local_key.pepper_len); // add pepper
+    	memcpy(&in[pad_size+local_key.pepper_len], ip.c_str(), ip_len); // add ip
+		in[0] = pad_size; // first byte of data is length
+		out_len = new_len<<1; // ct len is double pt len
+		
+		// generate IV
+		CryptoPP::AutoSeededRandomPool rng;
+		rng.GenerateBlock(iv, CryptoPP::AES::BLOCKSIZE); // 16-byte IV
+		std::cout << std::endl << std::dec << out_len;
+
+		// encrypt using AES-256-CBC
+		uint8_t *out = new uint8_t[out_len];
+		CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption cipherf;
+		cipherf.SetKeyWithIV(local_key.keys, local_key.key_len, iv, CryptoPP::AES::BLOCKSIZE);
+ 		CryptoPP::StreamTransformationFilter filter(cipherf, new CryptoPP::ArraySink(out, out_len), CryptoPP::StreamTransformationFilter::NO_PADDING);
+ 		filter.Put(in, out_len); // TODO: WHY AND HOW IS IT OUT_LEN? IT SHOULD BE NEW_LEN BUT THAT ONLY USES HALF OF OUT. HOW?
+ 		filter.MessageEnd();
+		delete[] in;
+		return out;
 	}
 
 	// cryptographically secure file move. This means that it will set the file data to zero and write

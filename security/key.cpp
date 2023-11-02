@@ -164,8 +164,8 @@ void gen_key_exe(uint8_t *key_value=nullptr, uint16_t key_size=68, uint16_t enc_
 	command << "\n				file << std::setfill('0') << std::hex << std::setw(2) << decrypted[i]+0;";
 	command << "\n			}";
 	command << "\n			file << \"\\n\" << std::setfill('0') << std::hex << std::setw(4) << " << enc_key_size << ";";
-	command << "\n			file  		<< std::setfill('0') << std::hex << std::setw(4) << " << port_key_size << ";";
-	command << "\n			file  		<< std::setfill('0') << std::hex << std::setw(4) << " << pepper_size << ";";
+	command << "\n			file  	    	<< std::setfill('0') << std::hex << std::setw(4) << " << port_key_size << ";";
+	command << "\n			file  	    	<< std::setfill('0') << std::hex << std::setw(4) << " << pepper_size << ";";
 	command << "\n			file.close();";
 	command << "\n			break;";
 	command << "\n		}";
