@@ -165,12 +165,12 @@ class Blocked
 		// block a new ip
 		void block(std::string ip)
 		{
-			uint8_t blocked_len;
-			uint8_t *iv;
+			uint16_t blocked_len;
+			uint8_t *iv = new uint8_t[CryptoPP::AES::BLOCKSIZE];
 			uint8_t *encrypted = Cryptography::encrypt_ip_with_pepper(keys_path, ip, blocked_len, iv);
-			std::fstream file(blocked_path, std::ios_base::in | std::ios_base::out | std::ios_base::app);
+			std::fstream file(blocked_path, std::ios_base::app);
 
-			if(file.peek() != std::ifstream::traits_type::eof()) { // if file is not empty
+			if(!std::filesystem::is_empty(blocked_path)) { // if file is not empty
 				file << "\n";
 			}
 
