@@ -36,3 +36,6 @@ torcomm
 test/pad*
 security/get_keys
 security/keys
+
+# blocked ips
+blocked
