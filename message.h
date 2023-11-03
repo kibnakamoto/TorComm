@@ -165,8 +165,6 @@ namespace Cryptography
 		std::string ip;
 		LocalKeys local_key(key_path); // get local key parameters like key and length
 		
-		
-		// encrypt using AES-256-CBC
 		CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption decipherf;
 		decipherf.SetKeyWithIV(local_key.keys, local_key.key_len, iv, CryptoPP::AES::BLOCKSIZE);
  		CryptoPP::StreamTransformationFilter filter(decipherf, new CryptoPP::StringSink(ip), CryptoPP::StreamTransformationFilter::NO_PADDING);
@@ -210,7 +208,6 @@ namespace Cryptography
 		// generate IV
 		CryptoPP::AutoSeededRandomPool rng;
 		rng.GenerateBlock(iv, CryptoPP::AES::BLOCKSIZE); // 16-byte IV
-		std::cout << std::endl << std::dec << out_len;
 
 		// encrypt using AES-256-CBC
 		uint8_t *out = new uint8_t[out_len];

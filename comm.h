@@ -137,7 +137,7 @@ class Blocked
 					continue; // line is corrupt, doesn't have space meaning isn't in the right format (ct iv)
 				}
 				std::string ip = line.substr(0, del);
-				std::string iv = line.substr(del, CryptoPP::AES::BLOCKSIZE<<1);
+				std::string iv = line.substr(del+1, (CryptoPP::AES::BLOCKSIZE<<1));
 
 				// convert hex string to pointer
 				uint16_t ip_len = ip.length()>>1;
@@ -186,6 +186,7 @@ class Blocked
 			// add to vectors
 			ips.push_back(encrypted);
 			ivs.push_back(iv);
+			ip_lengths.push_back(blocked_len);
 			file.close();
 		}
 
@@ -195,7 +196,6 @@ class Blocked
 		{
 			auto ip_addr = boost::asio::ip::make_address_v6(ip);
 			for(uint16_t i=0;i<ips.size();i++) {
-				// decrypt ip from ips
 				auto decrypted = boost::asio::ip::make_address_v6(Cryptography::decrypt_ip_with_pepper(keys_path, ips[i], ip_lengths[i], ivs[i]));
 
 				// if decrypted equals ip
