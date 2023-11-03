@@ -21,6 +21,11 @@ int main()
 	assert(blocked1);
 	assert(blocked2);
 	assert(!blocked3);
+
+	blocked0 = blocked.unblock("0000:0000:0000:0000:0000:0000:0000:0000");
+	assert(blocked0); // should say it's blocked
+	blocked0 = blocked.is_blocked("0000:0000:0000:0000:0000:0000:0000:0000");
+	assert(!blocked0); // shouldn't be blocked again
 	std::cout << std::endl << "passed" << std::endl;
 	return 0;
 }
