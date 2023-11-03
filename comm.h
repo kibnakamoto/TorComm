@@ -4,6 +4,7 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/ip/address_v6.hpp>
 #include <boost/system/error_code.hpp>
+#include <cryptopp/cryptlib.h>
 #include <stdint.h>
 #include <string>
 
@@ -165,6 +166,7 @@ class Blocked
 		// block a new ip
 		void block(std::string ip)
 		{
+			if(is_blocked(ip)) return; // already blocked
 			uint16_t blocked_len;
 			uint8_t *iv = new uint8_t[CryptoPP::AES::BLOCKSIZE];
 			uint8_t *encrypted = Cryptography::encrypt_ip_with_pepper(keys_path, ip, blocked_len, iv);
@@ -207,37 +209,51 @@ class Blocked
 		}
 
 		// unblock an ip
-		// return: if was blocked
+		// return: if ip was blocked
 		bool unblock(std::string ip)
 		{
 			auto ip_addr = boost::asio::ip::make_address_v6(ip);
 			for(uint16_t i=0;i<ips.size();i++) {
+				boost::asio::ip::address_v6 decrypted;
 				// decrypt ip from ips
-				auto decrypted = boost::asio::ip::make_address_v6(Cryptography::decrypt_ip_with_pepper(keys_path, ips[i], ip_lengths[i], ivs[i]));
+				try {
+					decrypted = boost::asio::ip::make_address_v6(Cryptography::decrypt_ip_with_pepper(keys_path, ips[i], ip_lengths[i], ivs[i]));
+				} catch(CryptoPP::InvalidCiphertext &) {
+					// wrong IP address so remove it
+					ips.erase(ips.begin()+i);
+					ip_lengths.erase(ip_lengths.begin()+i);
+					ivs.erase(ivs.begin()+i);
+				} catch(boost::wrapexcept<boost::system::system_error> &) {
+					// wrong IP address so remove it
+					ips.erase(ips.begin()+i);
+					ip_lengths.erase(ip_lengths.begin()+i);
+					ivs.erase(ivs.begin()+i);
+				}
 
-				// if decrypted equals ip
 				if(decrypted == ip_addr) {
 					// remove ip
 					ips.erase(ips.begin()+i);
 					ip_lengths.erase(ip_lengths.begin()+i);
 					ivs.erase(ivs.begin()+i);
 
-					// remove from file
-					std::fstream file(blocked_path, std::ios_base::app | std::ios_base::out);
-					std::string line;
-					while(std::getline(file, line)) {
-
-						// check if ip and iv matches
-						size_t index = line.find(to_hex_str(ips[i], ip_lengths[i]) + to_hex_str(ivs[i], CryptoPP::AES::BLOCKSIZE));
-						if(index != std::string::npos) {
-							line.clear();
-							file.close();
-							return true;
-						}
-					}
+					write(); // rewrite file
+					return true;
 				}
 			}
 			return false;
+		}
+
+		// rewrite the blocked file based on vectors
+		void write()
+		{
+			// rewrite the file
+			std::ofstream file(blocked_path);
+			uint16_t ips_size = ips.size();
+			for(uint16_t i=0;i<ips_size;i++) {
+				file << to_hex_str(ips[i], ip_lengths[i]) << " " << to_hex_str(ivs[i], CryptoPP::AES::BLOCKSIZE);
+				if(i != ips_size-1) file << "\n";
+			}
+			file.close();
 		}
 };
 
@@ -276,7 +292,7 @@ class P2P
 						sock.close(); // stop socket because it's blocked
 						if(log_network_issues) {
 							file << "\nconnection request denied (in P2P::accept) = TIME: "
-								 << get_time(); // TODO: don't save ips use salt and hash the blocked ip using sha512. and compare the hashes on each request
+								 << get_time();
 						}
 					} else {
 				    	clients.push_back(std::move(sock));
