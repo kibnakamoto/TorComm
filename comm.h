@@ -280,9 +280,9 @@ class P2P
     		listener.listen();
 		}
 
+		// accept connection
 		void accept()
 		{
-			std::ofstream file(NETWORK_LOG_FILE, std::fstream::in | std::fstream::out | std::fstream::app);
         	listener.async_accept([&](boost::system::error_code const& ec, boost::asio::ip::tcp::socket sock) {
 				if (!ec) {
 					sock.set_option(ipv6_option);
@@ -290,17 +290,12 @@ class P2P
 					// if ip address blocked, don't add as a client
 					if(blocked.is_blocked(sock.remote_endpoint().address().to_string())) {
 						sock.close(); // stop socket because it's blocked
-						if(log_network_issues) {
-							file << "\nconnection request denied (in P2P::accept) = TIME: "
-								 << get_time();
-						}
 					} else {
 				    	clients.push_back(std::move(sock));
 					}
 				    accept();
 				}
         	});
-			file.close();
 		}
 
 		void send(uint8_t type);

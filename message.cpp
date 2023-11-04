@@ -1,3 +1,4 @@
+#include <cryptopp/filters.h>
 #include <iostream>
 #include <jsoncpp/json/json.h>
 #include <ctime>
@@ -318,7 +319,7 @@ Cryptography::Key::multiply(CryptoPP::Integer priv_key,
 }
 
 // Hash based key deravation function
-void Cryptography::Key::hkdf()
+void Cryptography::Key::hkdf(uint8_t *salt, uint16_t salt_len)
 {
 	if(protocol.hash == SHA256) {
 		CryptoPP::HKDF<CryptoPP::SHA256> hkdf;
@@ -342,7 +343,7 @@ void Cryptography::Key::hkdf()
  		ciphertext_length = plaintext_length<<1;
  		ciphertext = new uint8_t[ciphertext_length];
  	}
- 	CryptoPP::StreamTransformationFilter filter(enc, new CryptoPP::ArraySink(ciphertext, ciphertext_length));
+ 	CryptoPP::StreamTransformationFilter filter(enc, new CryptoPP::ArraySink(ciphertext, ciphertext_length), CryptoPP::StreamTransformationFilter::NO_PADDING);
  	filter.Put(plaintext, plaintext_length);
  	filter.MessageEnd();
  	init = true;
@@ -456,7 +457,7 @@ void Cryptography::Decipher::Decryptor::operator()(AesDecryptorCBC_GMC auto &dec
 		plaintext_length = ciphertext_length>>1;
 		plaintext = new uint8_t[plaintext_length];
 	}
-	CryptoPP::StreamTransformationFilter filter(dec, new CryptoPP::ArraySink(plaintext, plaintext_length));
+	CryptoPP::StreamTransformationFilter filter(dec, new CryptoPP::ArraySink(plaintext, plaintext_length), CryptoPP::StreamTransformationFilter::NO_PADDING);
 	filter.Put(ciphertext, ciphertext_length);
 	filter.MessageEnd();
 	init = true;
