@@ -142,10 +142,6 @@ namespace Cryptography
 		HMAC
 	};
 
-	// 64-bit salt for HKDF
-	const constexpr static uint8_t salt[8] = {0x8f, 0x49, 0xa8, 0x2c, 0x21, 0xb5, 0x96, 0x5c};
-	const constexpr uint8_t salt_len = sizeof(salt)/sizeof(salt[0]);
-
 	// the default values to assign
 	// AES uses CBC mode (for performance reasons: https://cryptopp.com/benchmarks.html)
 	inline uint8_t default_communication_protocol = (uint8_t)SECP256R1 + ECIES_HMAC_AES256_CBC_SHA256;
@@ -178,13 +174,14 @@ namespace Cryptography
 		return ip;
 	}
 
-	// TODO: MAJOR BUG DETECTED: ADD NO PADDING OPTION TO ALL AES ENCRYPTORS/DECRYPTORS. ALSO CHANGE PT SIZE TO CT SIZE ON PUT FUNCTION CALL
+	// TODO: MAJOR BUG DETECTED: ADD NO PADDING OPTION TO ALL AES ENCRYPTORS/DECRYPTORS. ALSO CHANGE PT SIZE TO CT SIZE ON PUT FUNCTION CALL - DONE
 	// uses AES256_CBC
 	// TODO: fix keys.cpp, redefine encryption because port key is now different - DONE
-	// TODO Don't reuse salt for HKDF
 	// TODO: finish off securing the connect function in comm.cpp
-	// TODO: let every key use a different salt
-	// key: path to keys file
+	// key_path: path to keys file
+	// ip: ip address to encrypt
+	// out_len: the new output length. Output is returned
+	// iv: 16-byte IV
 	inline uint8_t *encrypt_ip_with_pepper(std::string key_path, std::string ip, uint16_t &out_len, uint8_t *iv)
 	{
 		LocalKeys local_key(key_path); // get local key parameters like key and length
@@ -406,7 +403,7 @@ namespace Cryptography
 						 CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k);
 
 				// Hash based key deravation function
-				void hkdf();
+				void hkdf(uint8_t *salt, uint16_t salt_len);
 	};
 
 	namespace /* INTERNAL NAMESPACE */
