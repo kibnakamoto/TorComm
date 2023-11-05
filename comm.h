@@ -1,14 +1,13 @@
 #ifndef COMM_H
 #define COMM_H
 
-#include <boost/asio/buffer.hpp>
-#include <boost/asio/ip/address_v6.hpp>
-#include <boost/system/error_code.hpp>
-#include <cryptopp/cryptlib.h>
 #include <stdint.h>
 #include <string>
 
+#include <boost/system/error_code.hpp>
 #include <boost/asio.hpp>
+
+#include <cryptopp/cryptlib.h>
 #include <cryptopp/aes.h>
 
 #include "message.h"
@@ -103,158 +102,30 @@ class Blocked
 		std::string blocked_path; // path to blocked file
 
 		// blocked_path: path to file blocked
-		Blocked(std::string keys_path, std::string blocked_path)
-		{
-			this->blocked_path = blocked_path;
-			this->keys_path = keys_path;
-			read();
-		}
+		Blocked(std::string keys_path, std::string blocked_path);
 
 		Blocked() = default;
 
 		// read data from blocked file
-		void read()
-		{
-			std::ifstream file(blocked_path);
-			if(file.peek() == std::ifstream::traits_type::eof()) { // if file is empty
-				return;
-			}
-
-			// delete data if not empty
-			if(!ips.empty()) {
-				for(size_t i=0;i<ips.size();i++) {
-					delete[] ips[i];
-					delete[] ivs[i];
-				}
-				ips.clear();
-				ip_lengths.clear();
-				ivs.clear();
-			}
-
-			std::string line;
-			while(std::getline(file, line)) {
-				size_t del = line.find(" ");
-				if(del == std::string::npos) {
-					continue; // line is corrupt, doesn't have space meaning isn't in the right format (ct iv)
-				}
-				std::string ip = line.substr(0, del);
-				std::string iv = line.substr(del+1, (CryptoPP::AES::BLOCKSIZE<<1));
-
-				// convert hex string to pointer
-				uint16_t ip_len = ip.length()>>1;
-				uint8_t *ip_ptr = new uint8_t[ip_len];
-				uint8_t *iv_ptr = new uint8_t[CryptoPP::AES::BLOCKSIZE];
-				hex_str_to(ip, ip_ptr);
-
-				hex_str_to(iv, iv_ptr);
-				ips.push_back(ip_ptr);
-				ivs.push_back(iv_ptr);
-				ip_lengths.push_back(ip_len);
-			}
-			file.close();
-		}
+		void read();
 
 		// destructor
-		~Blocked()
-		{
-			for(size_t i=0;i<ips.size();i++) {
-				delete[] ips[i];
-				delete[] ivs[i];
-			}
-		}
+		~Blocked();
+		
 
 		// block a new ip
-		void block(std::string ip)
-		{
-			if(is_blocked(ip)) return; // already blocked
-			uint16_t blocked_len;
-			uint8_t *iv = new uint8_t[CryptoPP::AES::BLOCKSIZE];
-			uint8_t *encrypted = Cryptography::encrypt_ip_with_pepper(keys_path, ip, blocked_len, iv);
-			std::fstream file(blocked_path, std::ios_base::app);
-
-			if(!std::filesystem::is_empty(blocked_path)) { // if file is not empty
-				file << "\n";
-			}
-
-			// add to file
-			for(int i=0;i<blocked_len;i++) {
-				file << std::hex << std::setw(2) << std::setfill('0') << encrypted[i]+0;
-			}
-			file << " ";
-			for(int i=0;i<CryptoPP::AES::BLOCKSIZE;i++) {
-				file << std::hex << std::setw(2) << std::setfill('0') << iv[i]+0;
-			}
-
-			// add to vectors
-			ips.push_back(encrypted);
-			ivs.push_back(iv);
-			ip_lengths.push_back(blocked_len);
-			file.close();
-		}
+		void block(std::string ip);
 
 		// check if ip is blocked
 		// ip: plaintext
-		bool is_blocked(std::string ip)
-		{
-			auto ip_addr = boost::asio::ip::make_address_v6(ip);
-			for(uint16_t i=0;i<ips.size();i++) {
-				auto decrypted = boost::asio::ip::make_address_v6(Cryptography::decrypt_ip_with_pepper(keys_path, ips[i], ip_lengths[i], ivs[i]));
-
-				// if decrypted equals ip
-				if(decrypted == ip_addr) {
-					return true;
-				}
-			}
-			return false;
-		}
+		bool is_blocked(std::string ip);
 
 		// unblock an ip
 		// return: if ip was blocked
-		bool unblock(std::string ip)
-		{
-			auto ip_addr = boost::asio::ip::make_address_v6(ip);
-			for(uint16_t i=0;i<ips.size();i++) {
-				boost::asio::ip::address_v6 decrypted;
-				// decrypt ip from ips
-				try {
-					decrypted = boost::asio::ip::make_address_v6(Cryptography::decrypt_ip_with_pepper(keys_path, ips[i], ip_lengths[i], ivs[i]));
-				} catch(CryptoPP::InvalidCiphertext &) {
-					// wrong IP address so remove it
-					ips.erase(ips.begin()+i);
-					ip_lengths.erase(ip_lengths.begin()+i);
-					ivs.erase(ivs.begin()+i);
-				} catch(boost::wrapexcept<boost::system::system_error> &) {
-					// wrong IP address so remove it
-					ips.erase(ips.begin()+i);
-					ip_lengths.erase(ip_lengths.begin()+i);
-					ivs.erase(ivs.begin()+i);
-				}
-
-				if(decrypted == ip_addr) {
-					// remove ip
-					ips.erase(ips.begin()+i);
-					ip_lengths.erase(ip_lengths.begin()+i);
-					ivs.erase(ivs.begin()+i);
-
-					write(); // rewrite file
-					return true;
-				}
-			}
-			return false;
-		}
+		bool unblock(std::string ip);
 
 		// rewrite the blocked file based on vectors
-		void write()
-		{
-			// rewrite the file
-			std::ofstream file(blocked_path);
-			uint16_t ips_size = ips.size();
-			for(uint16_t i=0;i<ips_size;i++) {
-				file << to_hex_str(ips[i], ip_lengths[i]) << " " << to_hex_str(ivs[i], CryptoPP::AES::BLOCKSIZE);
-				if(i != ips_size-1) file << "\n";
-			}
-			file.close();
-		}
+		void write();
 };
 
 // P2P has Client and Server on all connections
@@ -264,23 +135,26 @@ class P2P
 		std::vector<boost::asio::ip::tcp::socket> clients;
 		std::vector<boost::asio::ip::tcp::socket> servers;
 		boost::asio::ip::tcp::acceptor listener;
+		boost::asio::ip::tcp::resolver resolver;
+		boost::asio::ip::tcp::resolver::results_type endpoints;
+		std::string ip; // get ipv6 of this device
 		uint8_t *buffer;
 		boost::asio::ip::v6_only ipv6_option{true};
 		std::string local_key_path; // keys file
 		Blocked blocked;
 
-		P2P(uint16_t port, Blocked blocked) : listener(boost::asio::ip::tcp::acceptor(io_context, {{}, port}, true))
+		P2P(uint16_t port, Blocked blocked) : listener(boost::asio::ip::tcp::acceptor(io_context, {{}, port}, true)),
+											  resolver(io_context)
 		{
 			this->blocked = blocked;
-		}
+			ip = get_ipv6();
+			endpoints = resolver.resolve(ip, std::to_string(port)); // get endpoints
 
-		// listen to oncoming connections
-		void listen()
-		{
+			// listen to oncoming connections
     		listener.listen();
 		}
 
-		// accept connection
+		// accept connection, their client sends to this server.
 		void accept()
 		{
         	listener.async_accept([&](boost::system::error_code const& ec, boost::asio::ip::tcp::socket sock) {
@@ -294,11 +168,61 @@ class P2P
 				    	clients.push_back(std::move(sock));
 					}
 				    accept();
+				} else {
+					std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+					file << "\nerror in P2P::accept(): " << ec.message();
+					file.close();
 				}
         	});
 		}
 
+		// accept connection from specific ip only
+		void accept(std::vector<std::string> ips)
+		{
+        	listener.async_accept([&](boost::system::error_code const& ec, boost::asio::ip::tcp::socket sock) {
+				if (!ec) {
+					std::string sock_ip = sock.remote_endpoint().address().to_string();
+
+					// if ip matches any ips in ips
+					if(std::any_of(ips.begin(), ips.end(), [sock_ip](std::string ip) {return ip == sock_ip;})) {
+							sock.set_option(ipv6_option);
+
+							// can connect even if blocked
+				    		clients.push_back(std::move(sock));
+					} else {
+						sock.close();
+					}
+				} else {
+					std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+					file << "\nerror in P2P::accept(ips): " << ec.message();
+					file.close();
+				}
+        	});
+		}
+
+		// connect to their server even if blocked
+		void connect()
+		{
+			auto &socket = servers.emplace_back(io_context); // start socket
+			boost::asio::async_connect(socket, endpoints, [this](boost::system::error_code ec, boost::asio::ip::tcp::endpoint endpoint) {
+				if (ec) {
+					servers.pop_back(); // remove last element because there is an error
+					std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+					file << "\nerror in P2P::connect(): " << ec.message();
+					file.close();
+				}
+			});
+		}
+
+		// start the assynchronous connections. All connections are queued up until now
+		void start_async()
+		{
+			io_context.run();
+		}
+
 		void send(uint8_t type);
+
+		void exchange_keys();
 
 		uint8_t *recv();
 };
