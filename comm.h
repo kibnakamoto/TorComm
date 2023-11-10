@@ -1,8 +1,10 @@
 #ifndef COMM_H
 #define COMM_H
 
+#include <boost/asio/write.hpp>
 #include <stdint.h>
 #include <string>
+#include <concepts>
 
 #include <boost/system/error_code.hpp>
 #include <boost/asio.hpp>
@@ -48,12 +50,14 @@ class PacketParser
 {
 	public:
 			T data;
-			uint16_t error; // error code if type isn't string or uint8_t*
+			uint8_t type;
 
 			PacketParser(T packet);
 
-			// get the first 72 bits of data, len and type
-			void get72bits(uint64_t &len, uint8_t &type);
+			// get the data information from data
+			// len: length
+			// type: type of authentication, processed in ProtocolData
+			static void get_info(uint8_t *dat, uint64_t &len, uint8_t &type);
 
 			// parser functions, they return the parsed output, seperate the parts of the message
 			// len: uninitialized
@@ -71,6 +75,65 @@ class PacketParser
 			T p_delete(uint8_t *packet, uint64_t &len, uint8_t &type);
 };
 
+
+
+// ONCE RECEIVED
+// Once data is received, then, you have to remove padding, the thought is that the padding will be subtracted from the length of the message, the length is the first 8 bytes of data that is encrypted
+
+// no information is sent publicly, including the protocol used. the protocol used will be established using a puzzle. The puzzle is, considering that both parties (or more) know the secure key, adding the protocol number to the ecdsa signature then send it. Once received, the recipent has to try all possible protocols to come up with the right protocol.
+// for the recipent to know which is the correct protocol:
+// 	1. first sent network packet in a new communication requires:
+// 		* a random byte array that is encrypted is appended to the end of ciphertext/signature (with a public IV). Because the secret key used is known by the required parties, they can try all ciphers and once it gets a match, it will continue using that protocol. It is kind of a brute force method, but no one else can figure out either the key or the protocol used.
+
+/* This is AFTER PARSING the received message
+ * Purpose of this class:
+ * Creating images, files, GIFs, and videos as files after receiving.
+ * Compressing data when saving to sessions/session-id/messages.json.
+ * assigning a timestamp to when the message was received
+ */ 
+
+// type of Packet template T
+template<typename T>
+concept Packet_T_Type = requires(T t)
+{
+	{
+		(std::same_as<T, std::string> || 
+		 std::same_as<T, uint8_t*>)
+	};
+};
+
+// For creating network packets to send
+// parse packet to set text, images, videos, or delete, once ready 
+template<Packet_T_Type T=uint8_t*>
+class Packet
+{
+	public:
+			std::string timestamp; // time of message
+			T data;
+			uint8_t type; // text, images, videos, delete
+
+			Packet(T packet);
+			T msg; // plaintext message to receive
+			enum format {TEXT, IMAGE, VIDEO, _FILE_, GIF, DELETE};
+
+		// message and time (optional)
+		Packet(T message, std::string tm, Settings settings);
+
+		// parser functions, they return the parsed output, seperate the parts of the message
+		// len: uninitialized
+		// type: uninitialized
+		// returns uint8_t* or std::string
+
+		T p_text(uint8_t *packet, uint64_t &len, uint8_t &type);
+
+		T p_image(uint8_t *packet, uint64_t &len, uint8_t &type);
+
+		T p_video(uint8_t *packet, uint64_t &len, uint8_t &type);
+
+		T p_file(uint8_t *packet, uint64_t &len, uint8_t &type);
+
+		T p_delete(uint8_t *packet, uint64_t &len, uint8_t &type);
+};
 
 
 // PROTOTYPIC:
@@ -127,6 +190,13 @@ class Blocked
 		// rewrite the blocked file based on vectors
 		void write();
 };
+
+// universal genesis packet:
+// struct GenesisPacket
+// {
+// 	uint64_t length;
+// 	uint8_t type; // type is TEXT, IMAGE, VIDEO, etc. Cryptography protocol is selected on first connection, not every message has new protocol
+// };
 
 // P2P has Client and Server on all connections
 class P2P
@@ -201,6 +271,8 @@ class P2P
 		}
 
 		// connect to their server even if blocked
+		#pragma GCC diagnostic push
+		#pragma GCC diagnostic ignored "-Wunused-parameter"
 		void connect()
 		{
 			auto &socket = servers.emplace_back(io_context); // start socket
@@ -213,6 +285,7 @@ class P2P
 				}
 			});
 		}
+		#pragma GCC diagnostic pop
 
 		// start the assynchronous connections. All connections are queued up until now
 		void start_async()
@@ -220,10 +293,167 @@ class P2P
 			io_context.run();
 		}
 
-		void send(uint8_t type);
+		// send network packet
+		void send(uint8_t *packet, BUFFER_SIZES length)
+		{
+			// client sends network packet
+			_send(boost::asio::buffer(packet, length));
+		}
 
-		void exchange_keys();
+		// send network packet
+		void send(std::string msg)
+		{
+			// client sends network packet
+			_send(boost::asio::buffer(msg));
+		}
+		
+		// receive network packet
+		// both these variables rely on recv_genesis() output.
+		// data: whole data received
+		// packet_size: packet size of the received packet, this is for knowing how much of the array is valid
+		// return: who sent the message
+		std::string recv(uint8_t *data, uint16_t &packet_size)
+		{
+			for(auto &server : servers) {
+				size_t tmp = server.available();
+				if(tmp) {
+					boost::asio::async_read(server, boost::asio::buffer(data, packet_size), [&](boost::system::error_code ec, 
+																						   uint64_t) {
+						if (ec) {
+							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+							file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
+							file.close();
+						}
+          			});
+					return server.remote_endpoint().address().to_string();
+				}
+			}
+		}
 
-		uint8_t *recv();
+		// same as function above + address: IP address of sender
+		std::string recv(std::string address, uint8_t *data, uint16_t &packet_size)
+		{
+			for(auto &server : servers) {
+				std::string ip = server.remote_endpoint().address().to_string();
+				if(ip == address) {
+					boost::asio::async_read(server, boost::asio::buffer(data, packet_size), [&](boost::system::error_code ec, 
+																						   uint64_t) {
+						if (ec) {
+							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+							file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
+							file.close();
+						}
+          			});
+					return ip;
+				}
+			}
+		}
+
+		// RECEIVE PROTOCOL:
+		// This is designed to minimize wasting KBs for receiving a small text message. a hello message network packet should be received with a length of 5
+		// 1. recv_genesis to get length and protocol-id
+		// 2.   recv data of length packet_size determined by protocol id
+		// 3. if length > packet_size for the type of data (TEXT, IMAGE, VIDEO, etc.):
+		// 4. 	recv(data, packet_size)
+		// 5. else:
+		// 		recv(data, length)
+
+		// SEND PROTOCOL:
+		// 1. send_genesis
+
+		// receive the first packet of the connected series of packets. E.g. 1MB image's first packet is just a few bytes of data containing protocol number and length
+		// length: length of data, this is initialized in the function
+		// receive network packet data. This is for learning 
+		// packet_size: packet size of the received packet, this is for knowing how much of the array is valid
+		// return: who sent the message
+		std::string recv_genesis(uint64_t &len, uint8_t &type)
+		{
+			uint8_t packet_size = 9; // TODO: implement correctly
+			uint8_t *dat = new uint8_t[packet_size];
+			for(auto &server : servers) {
+				len = server.available();
+				if(len) { // if there is data to read
+					boost::asio::async_read(server, boost::asio::buffer(dat, packet_size), [&](boost::system::error_code ec, 
+																						   uint64_t) {
+						if (!ec) {
+							PacketParser<uint8_t*>::get_info(dat, len, type);
+						} else {
+							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+							file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
+							file.close();
+						}
+          			});
+					return server.remote_endpoint().address().to_string(); // return since data is received
+				}
+			}
+			delete[] dat;
+		}
+
+		// same as function above + address: IP address of the sender
+		// this will only receive from the address mentioned
+		std::string recv_genesis(std::string address, uint64_t &len, uint8_t &type)
+		{
+			uint8_t packet_size = 9; // TODO: implement correctly
+			uint8_t *dat = new uint8_t[packet_size];
+			for(auto &server : servers) {
+				std::string ip = server.remote_endpoint().address().to_string();
+				if(ip == address) {
+					boost::asio::async_read(server, boost::asio::buffer(dat, packet_size), [&](boost::system::error_code ec, 
+																						   uint64_t) {
+						if (!ec) {
+							PacketParser<uint8_t*>::get_info(dat, len, type);
+						} else {
+							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+							file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
+							file.close();
+						}
+          			});
+					return ip; // return since data is received
+				}
+			}
+			delete[] dat;
+		}
+
+		private:
+			void _send(boost::asio::mutable_buffers_1 packet)
+			{
+				// client sends network packet
+				for(auto &client : clients) {
+					boost::asio::async_write(client, packet, [&](boost::system::error_code ec, uint64_t) {
+						if (ec) {
+							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+							file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
+							file.close();
+						}
+						});
+				}
+			}
+
+			void _send(boost::asio::const_buffers_1 packet)
+			{
+				// client sends network packet
+				for(auto &client : clients) {
+					boost::asio::async_write(client, packet, [&](boost::system::error_code ec, uint64_t) {
+						if (ec) {
+							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+							file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
+							file.close();
+						}
+					});
+				}
+			}
 };
+
+// TODO: implement a higher level session that uses the P2P class above with cryptography to secure each communication channel. It should also use things give IDs for who send a message
+//		// exchange keys with one peer and create a secure communication channel
+//		// key: initialized key
+//		// protocol: initialized protocol
+//		void exchange_keys(Cryptography::Key &key, Cryptography::ProtocolData &protocol);
+//
+//		// TODO: implement
+//		// exchange keys with multiple peers and create a secure communication channel
+//		// key: initialized key
+//		// protocol: initialized protocol
+//		void exchange_keys_all(Cryptography::Key &key, Cryptography::ProtocolData &protocol);
+
 #endif /* COMM_H */
