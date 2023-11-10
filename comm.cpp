@@ -18,12 +18,7 @@
 template<typename T>
 PacketParser<T>::PacketParser(T packet)
 {
-	// T has to be either uint8_t* or std::string
-	if constexpr(std::is_same<T, uint8_t*>() || std::is_same<T, std::string>()) {
-		error = WRONG_TYPE_ERROR;
-	} else {
-		data = packet;
-	}
+	data = packet;
 	//switch (format)
 	//{
 	//	case Message::TEXT:
@@ -41,14 +36,23 @@ PacketParser<T>::PacketParser(T packet)
 
 // get the first 72-bits of data from packet
 template<typename T>
-void PacketParser<T>::get72bits(uint64_t &len, uint8_t &type)
+void PacketParser<T>::get_info(uint8_t *dat, uint64_t &len, uint8_t &type)
 {
+	// get length and type
 	len=0;
 	for(uint8_t i=0;i<8;i++) {
 		len <<= 8;
-		len |= data[i];
+		len |= dat[i];
 	}
-	type = data[8];
+	type = dat[8];
+}
+
+// packet construction for sending
+template<typename T>
+Packet<T>::Packet(T message, std::string tm, Settings settings)
+{
+	msg = message;
+	timestamp = tm;
 }
 
 // blocked ips

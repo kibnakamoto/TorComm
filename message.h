@@ -177,7 +177,12 @@ namespace Cryptography
 	// TODO: MAJOR BUG DETECTED: ADD NO PADDING OPTION TO ALL AES ENCRYPTORS/DECRYPTORS. ALSO CHANGE PT SIZE TO CT SIZE ON PUT FUNCTION CALL - DONE
 	// uses AES256_CBC
 	// TODO: fix keys.cpp, redefine encryption because port key is now different - DONE
-	// TODO: finish off securing the connect function in comm.cpp
+	// TODO: finish off securing the connect function in comm.cpp - DONE
+	// NOT DONE:
+	// TODO: define network packet construction and destruction (Packet class, PacketParser class)
+	// TODO: define send/receive functions in P2P
+	// TODO: define key exchanging for 2 peer communication 
+	// TODO: define key exchanging for multi peer communication 
 	// key_path: path to keys file
 	// ip: ip address to encrypt
 	// out_len: the new output length. Output is returned
@@ -651,38 +656,5 @@ namespace Cryptography
 // delete[] plaintext;
 // delete[] ciphertext;
 //
-
-
-
-// ONCE RECEIVED
-// Once data is received, then, you have to remove padding, the thought is that the padding will be subtracted from the length of the message, the length is the first 8 bytes of data that is encrypted
-
-// no information is sent publicly, including the protocol used. the protocol used will be established using a puzzle. The puzzle is, considering that both parties (or more) know the secure key, adding the protocol number to the ecdsa signature then send it. Once received, the recipent has to try all possible protocols to come up with the right protocol.
-// for the recipent to know which is the correct protocol:
-// 	1. first sent network packet in a new communication requires:
-// 		* a random byte array that is encrypted is appended to the end of ciphertext/signature (with a public IV). Because the secret key used is known by the required parties, they can try all ciphers and once it gets a match, it will continue using that protocol. It is kind of a brute force method, but no one else can figure out either the key or the protocol used.
-
-/* This is AFTER PARSING the received message
- * Purpose of this class:
- * Creating images, files, GIFs, and videos as files after receiving.
- * Compressing data when saving to sessions/session-id/messages.json.
- * assigning a timestamp to when the message was received
- */ 
-template<typename T=std::string> // if message is TEXT, then make it string, else, uint8_t*
-class Message
-{
-	public:
-		std::string timestamp; // time of message
-		T msg; // plaintext message to receive
-		Json::Value messages;
-		std::string messages_path;
-		enum format {TEXT, IMAGE, VIDEO, _FILE_, GIF, DELETE};
-
-		// message and time (optional)
-		Message(T message, std::string tm, std::string message_path, std::string from, std::string to, Settings settings);
-
-		// add to sessions/messages.json after encrypting, and compressing
-		void add(std::string messages_path, format type=TEXT);
-};
 
 #endif /* MESSAGE_H */

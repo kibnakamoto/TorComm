@@ -721,23 +721,6 @@ bool Cryptography::Hmac::verify(uint8_t *pt, uint16_t len)
 	return verify;
 }
 
-
-// message and time
-template<typename T>
-Message<T>::Message(T message, std::string tm, std::string message_path, std::string from, std::string to, Settings settings)
-{
-	msg = message;
-	timestamp = tm;
-	messages_path = message_path;
-}
-
-// add to sessions/messages.json
-template<typename T>
-void Message<T>::add(std::string messages_path, format type)
-{
-	
-}
-
 std::string get_time()
 {
     auto time = std::chrono::system_clock::now();
