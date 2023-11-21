@@ -1,11 +1,13 @@
 #ifndef COMM_H
 #define COMM_H
 
-#include <boost/asio/write.hpp>
 #include <stdint.h>
 #include <string>
 #include <concepts>
+#include <cstdlib>
 
+#include <boost/asio/buffer.hpp>
+#include <boost/asio/write.hpp>
 #include <boost/system/error_code.hpp>
 #include <boost/asio.hpp>
 
@@ -14,22 +16,6 @@
 
 #include "message.h"
 #include "errors.h"
-
-// The Buffer sizes are NOT CONSTANT, these numbers are for SEGMENTS OF DATA. E.g. 1 byte text message will be sent as 1 byte, not 1024 bytes
-// aes-256 encrypted message block sizes, divide by 2 for msg lengths, encrypted length of aes-256
-
-// This is ciphertext size, not plaintext. All data will be send as ciphertext
-// This is counting padding
-// They are set to be a multiple of 32msg_type
-enum BUFFER_SIZES {
-	// 8 byte message length + 1-byte msg type + 519-byte message (plaintext size), ciphertext is double the size
-	GENESIS_BUFFER_SIZE = 1056,  // 0x020a   - The first message block for all types
-	TEXT_BUFFER_SIZE    = 1024,  // 0x0400   - Default text buffer size, while using, it can be different
-	IMAGE_BUFFER_SIZE   = 1504,  // 0x05e0
-	FILE_BUFFER_SIZE   =  2048,  // 0x0800
-	VIDEO_BUFFER_SIZE   = 2048,  // 0x0800
-	DELETE_BUFFER_SIZE  = 0,     // 0x0000
-};
 
 // limits of single message sizes
 // If a single message is larger, it might just be a DOS attack so ask the user if they want to receive such a large file
@@ -42,10 +28,31 @@ enum SIZE_LIMITS {
     MAX_DELETE_SIZE = 0,        // 0x00000000  - Doesn't need a limit
 };
 
+// type of Packet template T
+template<typename T>
+concept Packet_T_Type = requires(T t)
+{
+	{
+		(std::same_as<T, std::string> || 
+		 std::same_as<T, uint8_t*>)
+	};
+};
+
+// type of buffer in send/recv
+template<typename T>
+concept Boost_Buffer_Type = requires(T t)
+{
+	{
+		(std::same_as<T, boost::asio::mutable_buffers_1> || 
+		 std::same_as<T, boost::asio::const_buffers_1>)
+	};
+};
+
+
 // For parsing received network packets
 // parse packet to get text, images, videos, or delete
 // then use Message class to 
-template<typename T=uint8_t*>
+template<Packet_T_Type T=uint8_t*>
 class PacketParser
 {
 	public:
@@ -55,8 +62,9 @@ class PacketParser
 			PacketParser(T packet);
 
 			// get the data information from data
+			// dat: data where len and type are stored as bytes
 			// len: length
-			// type: type of authentication, processed in ProtocolData
+			// type: type of message (TEXT, IMAGE, etc)
 			static void get_info(uint8_t *dat, uint64_t &len, uint8_t &type);
 
 			// parser functions, they return the parsed output, seperate the parts of the message
@@ -92,16 +100,6 @@ class PacketParser
  * assigning a timestamp to when the message was received
  */ 
 
-// type of Packet template T
-template<typename T>
-concept Packet_T_Type = requires(T t)
-{
-	{
-		(std::same_as<T, std::string> || 
-		 std::same_as<T, uint8_t*>)
-	};
-};
-
 // For creating network packets to send
 // parse packet to set text, images, videos, or delete, once ready 
 template<Packet_T_Type T=uint8_t*>
@@ -114,25 +112,47 @@ class Packet
 
 			Packet(T packet);
 			T msg; // plaintext message to receive
-			enum format {TEXT, IMAGE, VIDEO, _FILE_, GIF, DELETE};
 
-		// message and time (optional)
-		Packet(T message, std::string tm, Settings settings);
+			// The Buffer sizes are NOT CONSTANT, these numbers are for SEGMENTS OF DATA. E.g. 1 byte text message will be sent as 1 byte, not 1024 bytes
+			// aes-256 encrypted message block sizes, divide by 2 for msg lengths, encrypted length of aes-256
+			
+			// This is ciphertext size, not plaintext. All data will be send as ciphertext
+			// This is counting padding
+			// They are set to be a multiple of 32msg_type
+			// WHEN SENDING GENESIS PACKET, SEND (FORMAT >> 5), OR DIVIDE BY 32. This is to make sure the format fits in a byte
+			enum format {
+				TEXT    = 1024,  // 0x0400   - Default text buffer size, while using, it can be different
+				IMAGE   = 1504,  // 0x05e0
+				VIDEO   = 2048,  // 0x0800
+				_FILE_  = 1600, // 0x640
+				DELETE  = 0,     // 0x0000   - No packet
+			};
 
-		// parser functions, they return the parsed output, seperate the parts of the message
-		// len: uninitialized
-		// type: uninitialized
-		// returns uint8_t* or std::string
 
-		T p_text(uint8_t *packet, uint64_t &len, uint8_t &type);
+			// message and time (optional)
+			Packet(T message, std::string tm, Settings settings);
 
-		T p_image(uint8_t *packet, uint64_t &len, uint8_t &type);
+			// get the data information from data
+			// dat: bytearray of len and type
+			// len: length
+			// type: type of message (TEXT, IMAGE, etc)
+			// return: length of dat
+			static uint8_t set_info(uint8_t *dat, uint64_t len, uint8_t type);
 
-		T p_video(uint8_t *packet, uint64_t &len, uint8_t &type);
+			// parser functions, they return the parsed output, seperate the parts of the message
+			// len: uninitialized
+			// type: uninitialized
+			// returns uint8_t* or std::string
 
-		T p_file(uint8_t *packet, uint64_t &len, uint8_t &type);
+			T p_text(uint8_t *packet, uint64_t &len, uint8_t &type);
 
-		T p_delete(uint8_t *packet, uint64_t &len, uint8_t &type);
+			T p_image(uint8_t *packet, uint64_t &len, uint8_t &type);
+
+			T p_video(uint8_t *packet, uint64_t &len, uint8_t &type);
+
+			T p_file(uint8_t *packet, uint64_t &len, uint8_t &type);
+
+			T p_delete(uint8_t *packet, uint64_t &len, uint8_t &type);
 };
 
 
@@ -293,18 +313,70 @@ class P2P
 			io_context.run();
 		}
 
-		// send network packet
-		void send(uint8_t *packet, BUFFER_SIZES length)
+		/*
+		 * ALL Receive & Send Methods Require Their Data to be Padded
+		 */
+
+		// send network packet to all
+		void send(uint8_t *packet, uint16_t length)
 		{
 			// client sends network packet
 			_send(boost::asio::buffer(packet, length));
 		}
 
-		// send network packet
+		// send network packet to all
 		void send(std::string msg)
 		{
 			// client sends network packet
 			_send(boost::asio::buffer(msg));
+		}
+
+		// send network packet to address
+		void send(boost::asio::ip::tcp::socket &sender, uint8_t *packet, uint16_t length)
+		{
+			// client sends network packet
+			_send(sender, boost::asio::buffer(packet, length));
+		}
+
+		// send network packet to address
+		void send(boost::asio::ip::tcp::socket &sender, std::string msg)
+		{
+			// client sends network packet
+			_send(sender, boost::asio::buffer(msg));
+		}
+
+		// send genesis packet
+		void send_genesis(uint64_t len, uint8_t type)
+		{
+			// client sends network packet
+			uint8_t *dat;
+			uint8_t dat_len = Packet<uint8_t*>::set_info(dat, len, type);
+			for(auto &client : clients) {
+				boost::asio::async_write(client, boost::asio::buffer(dat, dat_len), [&](boost::system::error_code ec, uint64_t) {
+					if (ec) {
+						std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+						file << "\nerror in P2P::send_genesis(len, type): " << ec.message();
+						file.close();
+					}
+					});
+			}
+			delete[] dat;
+		}
+
+		// send genesis packet
+		void send_genesis(boost::asio::ip::tcp::socket &sender, uint64_t len, uint8_t type)
+		{
+			// client sends network packet
+			uint8_t *dat;
+			uint8_t dat_len = Packet<uint8_t*>::set_info(dat, len, type);
+			boost::asio::async_write(sender, boost::asio::buffer(dat, dat_len), [&](boost::system::error_code ec, uint64_t) {
+				if (ec) {
+					std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+					file << "\nerror in P2P::send_genesis(address, len, type): " << ec.message();
+					file.close();
+				}
+			});
+			delete[] dat;
 		}
 		
 		// receive network packet
@@ -314,39 +386,24 @@ class P2P
 		// return: who sent the message
 		std::string recv(uint8_t *data, uint16_t &packet_size)
 		{
-			for(auto &server : servers) {
-				size_t tmp = server.available();
-				if(tmp) {
-					boost::asio::async_read(server, boost::asio::buffer(data, packet_size), [&](boost::system::error_code ec, 
-																						   uint64_t) {
-						if (ec) {
-							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-							file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
-							file.close();
-						}
-          			});
-					return server.remote_endpoint().address().to_string();
-				}
-			}
+			return _recv(boost::asio::buffer(data, packet_size));
 		}
 
-		// same as function above + address: IP address of sender
-		std::string recv(std::string address, uint8_t *data, uint16_t &packet_size)
+		// same as function above + receiver: find_to_send(address)
+		void recv(boost::asio::ip::tcp::socket &receiver, uint8_t *data, uint16_t &packet_size)
 		{
-			for(auto &server : servers) {
-				std::string ip = server.remote_endpoint().address().to_string();
-				if(ip == address) {
-					boost::asio::async_read(server, boost::asio::buffer(data, packet_size), [&](boost::system::error_code ec, 
-																						   uint64_t) {
-						if (ec) {
-							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-							file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
-							file.close();
-						}
-          			});
-					return ip;
-				}
-			}
+			_recv(receiver, boost::asio::buffer(data, packet_size));
+		}
+
+		std::string recv(std::string data)
+		{
+			return _recv(boost::asio::buffer(data));
+		}
+
+		// same as function above + receiver: find_to_send(address)
+		void recv(boost::asio::ip::tcp::socket &receiver, std::string data)
+		{
+			_recv(receiver, boost::asio::buffer(data));
 		}
 
 		// RECEIVE PROTOCOL:
@@ -357,9 +414,94 @@ class P2P
 		// 4. 	recv(data, packet_size)
 		// 5. else:
 		// 		recv(data, length)
+		void recv_full(Packet_T_Type auto &dat, uint64_t &length, Packet<>::format &type)
+		{
+			
+		}
 
 		// SEND PROTOCOL:
-		// 1. send_genesis
+		// 1. pad plaintext to the required plaintext size
+		// 2. encrypt plaintext
+		// 3. send_genesis to send length and type of message (TEXT, VIDEO, etc.)
+		// 4. if ciphertext length smaller than packet size:
+		// 5.		send the packet of message with ciphertext length rather than packet size because there will only be one packet
+		// 6. else:
+		// 			send all the packets with packet size, sending doesn't need padding for the last packet, receiving does, so the last packet will be received with: length modulo packet size
+		// 	This function is for the whole send protocol for a single message.
+		// 	data: plaintext data (string or uint8_t*)
+		// 	length: length of data
+		// 	type: type of message
+		// 	got_cipher: cipher.get_cipher();
+		void send_full(Packet_T_Type auto dat, uint64_t length, Packet<>::format type,
+					   Cryptography::ProtocolData &protocol, Cryptography::Key &key,
+					   Cryptography::Cipher &cipher, auto got_cipher)
+		{
+			uint8_t *data;
+
+			// first make sure data is of type uint8_t*
+			if constexpr(std::same_as<decltype(dat), std::string>) {
+				// if string, then data is probably short enough to be copied to another container without wasting ram
+				data = new uint8_t[length];
+				memcpy(data, (uint8_t*)dat.c_str(), length);
+			} else {
+				data = dat;
+			}
+
+			// partition data (if required), encrypt and send
+			uint8_t div = (protocol.ct_size/protocol.block_size)-1; // ratio of ciphertext length to plaintext length
+			uint16_t length_per_pt = (uint16_t)type/(div+1); // get plaintext packet size. E.g. For text aes256 (1024B packet): 1024/(32/16) = 512B plaintext
+			uint64_t len = (length + (protocol.block_size - length%protocol.block_size))<<div; // ciphertext length
+			uint8_t *partition;
+
+			// send genesis packet
+			send_genesis(len, (uint16_t)type>>5);
+
+			// if length <= packet size, send as a single packet of size length, else: send as segments with length of packet size (type)
+			if(len <= type) { // if only one packet required
+				uint8_t *copy = new uint8_t[length];
+				memcpy(copy, data, length); // copy data
+				partition = cipher.pad(copy, *(uint16_t*)length); // pad data
+				// can convert length to uint16_t because if len <= type, then it's smaller than 0xffff
+
+				cipher.encrypt(got_cipher, data, length, partition, len, 1);
+				send(partition, len);
+			} else {
+				partition = new uint8_t[type];
+				uint64_t index = 0;
+				while(len >= type) { // if ciphertext length >= packet size, encrypt and send partition
+					cipher.encrypt(got_cipher, &data[index], length_per_pt, partition, type, 1);
+
+					// send partitioned data
+					send(partition, type);
+
+					len-=type;
+					index+=length_per_pt;
+				}
+				
+
+				// send the rest of data by padding
+				if(len > 0) { // if there is more data
+					uint8_t *copy = new uint8_t[len];
+					memcpy(copy, &data[index], len);
+
+					// pad final packet
+					if(len%32 != 0) copy = cipher.pad(copy, *(uint16_t*)len);
+
+					// encrypt final packet
+					uint64_t final_length = len << div;
+					cipher.encrypt(got_cipher, copy, len, partition, final_length, 1);
+
+					// send final packet
+					send(partition, final_length);
+					delete[] copy;
+				}
+			}
+			delete[] partition;
+
+			// if allocated here as string
+			if constexpr(std::same_as<decltype(dat), std::string>)
+				delete[] data;
+		}
 
 		// receive the first packet of the connected series of packets. E.g. 1MB image's first packet is just a few bytes of data containing protocol number and length
 		// length: length of data, this is initialized in the function
@@ -368,7 +510,7 @@ class P2P
 		// return: who sent the message
 		std::string recv_genesis(uint64_t &len, uint8_t &type)
 		{
-			uint8_t packet_size = 9; // TODO: implement correctly
+			uint8_t packet_size = 9;
 			uint8_t *dat = new uint8_t[packet_size];
 			for(auto &server : servers) {
 				len = server.available();
@@ -379,69 +521,116 @@ class P2P
 							PacketParser<uint8_t*>::get_info(dat, len, type);
 						} else {
 							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-							file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
+							file << "\nerror in P2P::recv_genesis(length, packet_size): " << ec.message();
 							file.close();
 						}
           			});
+					delete[] dat;
 					return server.remote_endpoint().address().to_string(); // return since data is received
 				}
 			}
 			delete[] dat;
+			return ""; // couldn't send to anybody
 		}
 
-		// same as function above + address: IP address of the sender
+		// same as function above + receiver: the socket from find_to_recv(address)
 		// this will only receive from the address mentioned
-		std::string recv_genesis(std::string address, uint64_t &len, uint8_t &type)
+		void recv_genesis(boost::asio::ip::tcp::socket &receiver, uint64_t &len, uint8_t &type)
 		{
-			uint8_t packet_size = 9; // TODO: implement correctly
+			uint8_t packet_size = 9;
 			uint8_t *dat = new uint8_t[packet_size];
-			for(auto &server : servers) {
-				std::string ip = server.remote_endpoint().address().to_string();
-				if(ip == address) {
-					boost::asio::async_read(server, boost::asio::buffer(dat, packet_size), [&](boost::system::error_code ec, 
-																						   uint64_t) {
-						if (!ec) {
-							PacketParser<uint8_t*>::get_info(dat, len, type);
-						} else {
-							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-							file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
-							file.close();
-						}
-          			});
-					return ip; // return since data is received
+			boost::asio::async_read(receiver, boost::asio::buffer(dat, packet_size), [&](boost::system::error_code ec, 
+																				   uint64_t) {
+				if (!ec) {
+					PacketParser<uint8_t*>::get_info(dat, len, type);
+				} else {
+					std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+					file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
+					file.close();
 				}
-			}
+          	});
 			delete[] dat;
 		}
 
+		boost::asio::ip::tcp::socket &find_to_send(std::string ip)
+		{
+			for(auto &client : clients) {
+				std::string address = client.remote_endpoint().address().to_string();
+				if(ip == address) {
+					return client;
+				}
+			}
+		}
+
+		boost::asio::ip::tcp::socket &find_to_recv(std::string ip)
+		{
+			for(auto &server : servers) {
+				std::string address = server.remote_endpoint().address().to_string();
+				if(ip == address) {
+					return server;
+				}
+			}
+		}
+
 		private:
-			void _send(boost::asio::mutable_buffers_1 packet)
+			void _send(Boost_Buffer_Type auto packet)
 			{
 				// client sends network packet
 				for(auto &client : clients) {
 					boost::asio::async_write(client, packet, [&](boost::system::error_code ec, uint64_t) {
 						if (ec) {
 							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-							file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
+							file << "\nerror in P2P::_send(packet): " << ec.message();
 							file.close();
 						}
 						});
 				}
 			}
 
-			void _send(boost::asio::const_buffers_1 packet)
+			// only send to this address
+			void _send(boost::asio::ip::tcp::socket &sender, Boost_Buffer_Type auto packet)
 			{
-				// client sends network packet
-				for(auto &client : clients) {
-					boost::asio::async_write(client, packet, [&](boost::system::error_code ec, uint64_t) {
+				// send network packet to client
+				boost::asio::async_write(sender, packet, [&](boost::system::error_code ec, uint64_t) {
+					if (ec) {
+						std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+						file << "\nerror in P2P::_send(ip, packet): " << ec.message();
+						file.close();
+					}
+				});
+			}
+
+		// only receive from this address
+		void _recv(boost::asio::ip::tcp::socket &receiver, Boost_Buffer_Type auto data)
+		{
+			boost::asio::async_read(receiver, data, [&](boost::system::error_code ec, 
+																				   uint64_t) {
+				if (ec) {
+					std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+					file << "\nerror in P2P::recv(address, data, packet_size): " << ec.message();
+					file.close();
+				}
+          	});
+		}
+
+		std::string _recv(Boost_Buffer_Type auto data)
+		{
+			for(auto &server : servers) {
+				size_t tmp = server.available();
+				if(tmp) {
+					boost::asio::async_read(server, data, [&](boost::system::error_code ec, 
+																						   uint64_t) {
 						if (ec) {
 							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-							file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
+							file << "\nerror in P2P::recv(data, packet_size): " << ec.message();
 							file.close();
 						}
-					});
+          			});
+					return server.remote_endpoint().address().to_string();
 				}
 			}
+			return ""; // received from no one
+		}
 };
 
 // TODO: implement a higher level session that uses the P2P class above with cryptography to secure each communication channel. It should also use things give IDs for who send a message
