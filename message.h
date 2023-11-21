@@ -1,9 +1,6 @@
 #ifndef MESSAGE_H
 #define MESSAGE_H
 
-#include <cryptopp/filters.h>
-#include <cryptopp/pubkey.h>
-#include <cryptopp/sha.h>
 #include <cstdlib>
 #include <functional>
 #include <string>
@@ -12,6 +9,8 @@
 #include <utility>
 #include <filesystem>
 #include <variant>
+
+#include <boost/asio/buffer.hpp>
 
 #include <cryptopp/cryptlib.h>
 #include <cryptopp/aes.h>
@@ -24,8 +23,9 @@
 #include <cryptopp/rijndael.h>
 #include <cryptopp/gcm.h>
 #include <cryptopp/chacha.h>
-
-#include <boost/asio/buffer.hpp>
+#include <cryptopp/filters.h>
+#include <cryptopp/pubkey.h>
+#include <cryptopp/sha.h>
 
 #include <jsoncpp/json/json.h>
 
@@ -178,9 +178,9 @@ namespace Cryptography
 	// uses AES256_CBC
 	// TODO: fix keys.cpp, redefine encryption because port key is now different - DONE
 	// TODO: finish off securing the connect function in comm.cpp - DONE
+	// TODO: define send/receive functions in P2P - DONE
 	// NOT DONE:
 	// TODO: define network packet construction and destruction (Packet class, PacketParser class)
-	// TODO: define send/receive functions in P2P
 	// TODO: define key exchanging for 2 peer communication 
 	// TODO: define key exchanging for multi peer communication 
 	// key_path: path to keys file

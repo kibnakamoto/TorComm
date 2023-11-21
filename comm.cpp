@@ -55,6 +55,20 @@ Packet<T>::Packet(T message, std::string tm, Settings settings)
 	timestamp = tm;
 }
 
+// set the first 72-bits of data from packet
+template<typename T>
+uint8_t Packet<T>::set_info(uint8_t *dat, uint64_t len, uint8_t type)
+{
+	dat = new uint8_t[9];
+
+	// get length and type
+	for(uint8_t i=0;i<8;i++) {
+		dat[i] = len>>i*8;
+	}
+	dat[8] = type;
+	return 9; // 9 bytes of data
+}
+
 // blocked ips
 Blocked::Blocked(std::string keys_path, std::string blocked_path)
 {
