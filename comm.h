@@ -416,7 +416,8 @@ class P2P
 		// 		recv(data, length)
 		void recv_full(Packet_T_Type auto &dat, uint64_t &length, Packet<>::format &type)
 		{
-			
+			// first receive genesis packet
+			recv_genesis(length, *(uint8_t*)type);
 		}
 
 		// SEND PROTOCOL:
@@ -499,9 +500,16 @@ class P2P
 			delete[] partition;
 
 			// if allocated here as string
-			if constexpr(std::same_as<decltype(dat), std::string>)
-				delete[] data;
+			if constexpr(std::same_as<decltype(dat), std::string>) {
+				delete[] data; // doesn't delete the pointer given as function parameter
+				
+				// move data to string
+				dat.reserve(length);
+				memcpy(dat.c_str(), (char*)data, length);
+			}
 		}
+
+
 
 		// receive the first packet of the connected series of packets. E.g. 1MB image's first packet is just a few bytes of data containing protocol number and length
 		// length: length of data, this is initialized in the function
