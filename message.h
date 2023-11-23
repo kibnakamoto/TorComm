@@ -174,15 +174,6 @@ namespace Cryptography
 		return ip;
 	}
 
-	// TODO: MAJOR BUG DETECTED: ADD NO PADDING OPTION TO ALL AES ENCRYPTORS/DECRYPTORS. ALSO CHANGE PT SIZE TO CT SIZE ON PUT FUNCTION CALL - DONE
-	// uses AES256_CBC
-	// TODO: fix keys.cpp, redefine encryption because port key is now different - DONE
-	// TODO: finish off securing the connect function in comm.cpp - DONE
-	// TODO: define send/receive functions in P2P - DONE
-	// NOT DONE:
-	// TODO: define network packet construction and destruction (Packet class, PacketParser class)
-	// TODO: define key exchanging for 2 peer communication 
-	// TODO: define key exchanging for multi peer communication 
 	// key_path: path to keys file
 	// ip: ip address to encrypt
 	// out_len: the new output length. Output is returned
