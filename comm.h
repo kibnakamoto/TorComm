@@ -232,6 +232,7 @@ class P2P
 		boost::asio::ip::v6_only ipv6_option{true};
 		std::string local_key_path; // keys file
 		Blocked blocked;
+		inline static uint32_t max_requests = 10; // the total amount of receive requests that can be made before quitting
 
 		P2P(uint16_t port, Blocked blocked) : listener(boost::asio::ip::tcp::acceptor(io_context, {{}, port}, true)),
 											  resolver(io_context)
@@ -414,10 +415,34 @@ class P2P
 		// 4. 	recv(data, packet_size)
 		// 5. else:
 		// 		recv(data, length)
-		void recv_full(Packet_T_Type auto &dat, uint64_t &length, Packet<>::format &type)
+
+		// dat: data container to hold received data
+		// length: length of dat
+		// type: type of message
+		// received_from: the socket which received this data
+		// all parameters are empty
+		// return: successfully received
+		bool recv_full(Packet_T_Type auto &dat, uint64_t &length, Packet<>::format &type, boost::asio::ip::tcp::socket *received_from)
 		{
 			// first receive genesis packet
-			recv_genesis(length, *(uint8_t*)type);
+			uint32_t tries = 0; // amount of tries it took to connect
+			do {
+				received_from = recv_genesis(length, *(uint8_t*)type);
+
+				// if max number of requests made
+				if(tries == max_requests) {
+					return 0;
+				}
+				tries++;
+				// TODO: delay sockets, then try again
+			} while(received_from == nullptr);
+
+			// receive all data based on ciphertext length
+			uint64_t len = length;
+			while(len >= type) { // if there are more packets
+				
+			}
+			return 1;
 		}
 
 		// SEND PROTOCOL:
@@ -516,7 +541,7 @@ class P2P
 		// receive network packet data. This is for learning 
 		// packet_size: packet size of the received packet, this is for knowing how much of the array is valid
 		// return: who sent the message
-		std::string recv_genesis(uint64_t &len, uint8_t &type)
+		boost::asio::ip::tcp::socket *recv_genesis(uint64_t &len, uint8_t &type)
 		{
 			uint8_t packet_size = 9;
 			uint8_t *dat = new uint8_t[packet_size];
@@ -534,11 +559,11 @@ class P2P
 						}
           			});
 					delete[] dat;
-					return server.remote_endpoint().address().to_string(); // return since data is received
+					return &server; // return since data is received
 				}
 			}
 			delete[] dat;
-			return ""; // couldn't send to anybody
+			return nullptr; // couldn't send to anybody
 		}
 
 		// same as function above + receiver: the socket from find_to_recv(address)
