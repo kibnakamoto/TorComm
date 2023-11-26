@@ -7,15 +7,26 @@
 #include "settings.h"
 #include "keys.h"
 
-	// TODO: MAJOR BUG DETECTED: ADD NO PADDING OPTION TO ALL AES ENCRYPTORS/DECRYPTORS. ALSO CHANGE PT SIZE TO CT SIZE ON PUT FUNCTION CALL - DONE
-	// uses AES256_CBC
-	// TODO: fix keys.cpp, redefine encryption because port key is now different - DONE
-	// TODO: finish off securing the connect function in comm.cpp - DONE
-	// TODO: define send/receive functions in P2P - DONE
-	// NOT DONE:
-	// TODO: define network packet construction and destruction (Packet class, PacketParser class)
-	// TODO: define key exchanging for 2 peer communication 
-	// TODO: define key exchanging for multi peer communication 
+////////// TODOS:
+/* Debugged:
+ * MAJOR BUG DETECTED: ADD NO PADDING OPTION TO ALL AES ENCRYPTORS/DECRYPTORS. ALSO CHANGE PT SIZE TO CT SIZE ON PUT FUNCTION CALL - DONE
+ *AES256_CBC
+ * fix keys.cpp, redefine encryption because port key is now different - DONE
+ * finish off securing the connect function in comm.cpp - DONE
+ * define send/receive functions in P2P - DONE
+ */
+
+/* NOT DONE:
+ * TODO: define network packet construction and destruction (Packet class, PacketParser class)
+ * TODO: define key exchanging for 2 peer communication 
+ * TODO: define key exchanging for multi peer communication 
+ * TODO: for send_full/recv_full, add the verification part for the message
+ */
+
+/* MAJOR:
+// TODO: while receving and sending fully, make sure that large files are treated properly, don't read the whole data into a byte array but rather read as partitions into an array. This is for really large files where the ram isn't enough,this means remove the Packet/PacketParser classes
+ */
+
 int main()
 {
 	std::string keys_filename = "keys.txt";
