@@ -420,28 +420,35 @@ class P2P
 		// length: length of dat
 		// type: type of message
 		// received_from: the socket which received this data
-		// all parameters are empty
+		// all parameters are empty until received_from (including), 
 		// return: successfully received
-		bool recv_full(Packet_T_Type auto &dat, uint64_t &length, Packet<>::format &type, boost::asio::ip::tcp::socket *received_from)
+		// RUN this function using another thread, this means there are 3 threads for communiciation, 2 for receiver, 1 for sender.
+		bool recv_full(uint8_t *dat, uint64_t &length, Packet<>::format &type,
+					   boost::asio::ip::tcp::socket *received_from, Cryptography::ProtocolData &protocol,
+					   Cryptography::Decipher decipher, auto got_decipher)
 		{
 			// first receive genesis packet
-			uint32_t tries = 1; // amount of tries it took to connect
-			bool connected = 0;
-			for(uint32_t i=0;i<max_requests;i++) {
-				uint8_t type_;
-				received_from = recv_genesis(length, type_);
-				if(received_from != nullptr) {
-					type = ((uint16_t)type_<<5);
-					connected = 1;
-					break;
-				}
+			uint8_t type_;
+			received_from = recv_genesis(length, type_);
+			if(received_from == nullptr) {
+				return 0; // no one is sending
 			}
-			if(!connected) return 0;
+			type = ((uint16_t)type_<<5);
 
 			// receive all data based on ciphertext length
-			uint64_t len = length;
+			if(length <= type) { // if single packet message
+				uint8_t *ct = new uint8_t[length]; // ciphertext
+				recv(*received_from, ct, *(uint16_t*)length);
+
+				uint16_t pt_len;
+				decipher.decrypt(got_decipher, ct, length, dat, pt_len, 0);
+				dat = decipher.unpad(dat, pt_len); // remove cryptographic padding
+			} else {
+				uint64_t len = length;
 			while(len >= type) { // if there are more packets
 				
+				len-=type;
+			}
 			}
 			return 1;
 		}
@@ -454,13 +461,14 @@ class P2P
 		// 5.		send the packet of message with ciphertext length rather than packet size because there will only be one packet
 		// 6. else:
 		// 			send all the packets with packet size, sending doesn't need padding for the last packet, receiving does, so the last packet will be received with: length modulo packet size
+
 		// 	This function is for the whole send protocol for a single message.
 		// 	data: plaintext data (string or uint8_t*)
 		// 	length: length of data
 		// 	type: type of message
 		// 	got_cipher: cipher.get_cipher();
 		void send_full(Packet_T_Type auto dat, uint64_t length, Packet<>::format type,
-					   Cryptography::ProtocolData &protocol, Cryptography::Key &key,
+					   Cryptography::ProtocolData &protocol,
 					   Cryptography::Cipher &cipher, auto got_cipher)
 		{
 			uint8_t *data;

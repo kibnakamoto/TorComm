@@ -482,8 +482,8 @@ Cryptography::Decipher::Decipher(ProtocolData &protocol, uint8_t *key, uint8_t *
 // cipher: output of protocol.get_decipher()
 // ct: ciphertext
 // ct_len: ciphertext length
-// data: plaintext
-// length: data length, the send packet length. if 1GB image, it would be IMAGE_BUFFER_SIZE, if last packet. has to be padded to be a multiple of protocol.block_size.
+// pt: plaintext
+// length: pt length
 // decrypts data, doesn't remove padding
 void Cryptography::Decipher::decrypt(auto &ct, uint16_t ct_len, uint8_t *&pt, uint16_t &length, bool &is_pt_allocated)
 {

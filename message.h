@@ -642,7 +642,7 @@ namespace Cryptography
 // d = Decipher(protocol, key, iv);
 // auto cipher = d.get_cipher();
 // d.set_key(cipher);
-// decrypt(cipher, ciphertext, ciphertext_length, plaintext, length);
+// d.decrypt(cipher, ciphertext, ciphertext_length, plaintext, length);
 // pad_size = d.unpad(plaintext, length);
 // delete[] plaintext;
 // delete[] ciphertext;
