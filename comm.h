@@ -385,7 +385,7 @@ class P2P
 		// data: whole data received
 		// packet_size: packet size of the received packet, this is for knowing how much of the array is valid
 		// return: who sent the message
-		std::string recv(uint8_t *data, uint16_t &packet_size)
+		boost::asio::ip::tcp::socket *recv(uint8_t *data, uint16_t &packet_size)
 		{
 			return _recv(boost::asio::buffer(data, packet_size));
 		}
@@ -396,7 +396,7 @@ class P2P
 			_recv(receiver, boost::asio::buffer(data, packet_size));
 		}
 
-		std::string recv(std::string data)
+		boost::asio::ip::tcp::socket *recv(std::string data)
 		{
 			return _recv(boost::asio::buffer(data));
 		}
@@ -425,17 +425,18 @@ class P2P
 		bool recv_full(Packet_T_Type auto &dat, uint64_t &length, Packet<>::format &type, boost::asio::ip::tcp::socket *received_from)
 		{
 			// first receive genesis packet
-			uint32_t tries = 0; // amount of tries it took to connect
-			do {
-				received_from = recv_genesis(length, *(uint8_t*)type);
-
-				// if max number of requests made
-				if(tries == max_requests) {
-					return 0;
+			uint32_t tries = 1; // amount of tries it took to connect
+			bool connected = 0;
+			for(uint32_t i=0;i<max_requests;i++) {
+				uint8_t type_;
+				received_from = recv_genesis(length, type_);
+				if(received_from != nullptr) {
+					type = ((uint16_t)type_<<5);
+					connected = 1;
+					break;
 				}
-				tries++;
-				// TODO: delay sockets, then try again
-			} while(received_from == nullptr);
+			}
+			if(!connected) return 0;
 
 			// receive all data based on ciphertext length
 			uint64_t len = length;
@@ -526,11 +527,12 @@ class P2P
 
 			// if allocated here as string
 			if constexpr(std::same_as<decltype(dat), std::string>) {
-				delete[] data; // doesn't delete the pointer given as function parameter
-				
 				// move data to string
 				dat.reserve(length);
-				memcpy(dat.c_str(), (char*)data, length);
+				memcpy(dat.c_str(), (const char*)data, length);
+
+				delete[] data; // doesn't delete the pointer given as function parameter
+				
 			}
 		}
 
@@ -551,7 +553,7 @@ class P2P
 					boost::asio::async_read(server, boost::asio::buffer(dat, packet_size), [&](boost::system::error_code ec, 
 																						   uint64_t) {
 						if (!ec) {
-							PacketParser<uint8_t*>::get_info(dat, len, type);
+							PacketParser<>::get_info(dat, len, type);
 						} else {
 							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
 							file << "\nerror in P2P::recv_genesis(length, packet_size): " << ec.message();
@@ -646,7 +648,7 @@ class P2P
           	});
 		}
 
-		std::string _recv(Boost_Buffer_Type auto data)
+		boost::asio::ip::tcp::socket *_recv(Boost_Buffer_Type auto data)
 		{
 			for(auto &server : servers) {
 				size_t tmp = server.available();
@@ -659,10 +661,10 @@ class P2P
 							file.close();
 						}
           			});
-					return server.remote_endpoint().address().to_string();
+					return &server;
 				}
 			}
-			return ""; // received from no one
+			return nullptr; // received from no one
 		}
 };
 
