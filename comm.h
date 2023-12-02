@@ -421,7 +421,7 @@ class P2P
 		// type: type of message
 		// received_from: the socket which received this data
 		// all parameters are empty until received_from (including), 
-		// return: successfully received
+		// return: successfully received, false if no one is sending
 		// RUN this function using another thread, this means there are 3 threads for communiciation, 2 for receiver, 1 for sender.
 		bool recv_full(uint8_t *dat, uint64_t &length, Packet<>::format &type,
 					   boost::asio::ip::tcp::socket *received_from, Cryptography::ProtocolData &protocol,
@@ -443,12 +443,32 @@ class P2P
 				uint16_t pt_len;
 				decipher.decrypt(got_decipher, ct, length, dat, pt_len, 0);
 				dat = decipher.unpad(dat, pt_len); // remove cryptographic padding
+				delete[] ct;
 			} else {
 				uint64_t len = length;
-			while(len >= type) { // if there are more packets
-				
-				len-=type;
-			}
+				uint8_t *ct = new uint8_t[type]; // ciphertext
+				uint16_t pt_len;
+				dat = new uint8_t[length]; // plaintext
+				uint64_t segment = 0; // segment of data, which packet is received.
+
+				while(len >= type) { // if there are more packets
+					recv(*received_from, ct, *(uint16_t*)type);
+					
+					decipher.decrypt(got_decipher, ct, type, &dat[segment], pt_len, 1);
+					len-=type;
+					segment+=pt_len;
+				}
+
+				if(len != 0) { // if there is data to read, if data wasn't a multiple of type
+					pt_len = length-segment; // the amount of plaintext bytes that can be received
+					uint8_t *copy = new uint8_t[pt_len]; // create copy so that the padding can be removed without an overflow.
+					memcpy(copy, &dat[segment], pt_len);
+					recv(*received_from, ct, *(uint16_t*)len);
+					
+					decipher.decrypt(got_decipher, ct, len, copy, pt_len, 1);
+					&dat[segment] = decipher.unpad(copy, pt_len); // remove cryptographic padding
+				}
+				delete[] ct;
 			}
 			return 1;
 		}
@@ -515,7 +535,7 @@ class P2P
 				
 
 				// send the rest of data by padding
-				if(len > 0) { // if there is more data
+				if(len != 0) { // if there is more data
 					uint8_t *copy = new uint8_t[len];
 					memcpy(copy, &data[index], len);
 
