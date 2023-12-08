@@ -466,6 +466,9 @@ namespace Cryptography
 				// set key with iv
 				void set_key(auto cipher);
 
+				void assign_iv(uint8_t *iv);
+				void assign_key(uint8_t *key);
+
 				// cipher: output of protocol.get_cipher()
 				// data: string, or uint8_t ptr, or buffer, etc. Plaintext
 				// length: data length, the send packet length. if 1GB image, it would be IMAGE_BUFFER_SIZE, if last packet. has to be padded to be a multiple of protocol.block_size.
@@ -522,6 +525,11 @@ namespace Cryptography
 			
 			// set key with iv
 			void set_key(auto cipher);
+
+			// set key with iv
+			inline void assign_key(uint8_t *key);
+
+			inline void assign_iv(uint8_t *iv);
 
 			// remove padding
 			// the last value of data is pad size to remove
@@ -586,7 +594,7 @@ namespace Cryptography
 		// hmacf: hmac function
 		// pt: plaintext
 		// pt_len: plaintext length
-		// mac_code: Message Authentecation Code unalocated buffer
+		// mac_code: Message Authentecation Code unallocated buffer
 		inline void generator_init(auto hmacf, uint8_t *pt, uint16_t pt_len);
 		inline bool verifier_init(auto hmacf, uint8_t *pt, uint16_t len);
 
@@ -594,6 +602,8 @@ namespace Cryptography
 				Hmac(ProtocolData &protocol, uint8_t *key);
 
 				~Hmac();
+
+				inline uint8_t *get_mac();
 
 				// generate the HMAC code
 				void generate(uint8_t *pt, uint16_t len);
