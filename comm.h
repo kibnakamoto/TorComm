@@ -260,9 +260,11 @@ class P2P
 					}
 				    accept();
 				} else {
-					std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-					file << "\nerror in P2P::accept(): " << ec.message();
-					file.close();
+					if(log_network_issues) {
+						std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+						file << "\nerror in P2P::accept(): " << ec.message();
+						file.close();
+					}
 				}
         	});
 		}
@@ -284,9 +286,11 @@ class P2P
 						sock.close();
 					}
 				} else {
-					std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-					file << "\nerror in P2P::accept(ips): " << ec.message();
-					file.close();
+					if(log_network_issues) {
+						std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+						file << "\nerror in P2P::accept(ips): " << ec.message();
+						file.close();
+					}
 				}
         	});
 		}
@@ -300,9 +304,11 @@ class P2P
 			boost::asio::async_connect(socket, endpoints, [this](boost::system::error_code ec, boost::asio::ip::tcp::endpoint endpoint) {
 				if (ec) {
 					servers.pop_back(); // remove last element because there is an error
-					std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-					file << "\nerror in P2P::connect(): " << ec.message();
-					file.close();
+					if(log_network_issues) {
+						std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+						file << "\nerror in P2P::connect(): " << ec.message();
+						file.close();
+					}
 				}
 			});
 		}
@@ -319,7 +325,7 @@ class P2P
 		 */
 
 		// send network packet to all
-		void send(uint8_t *packet, uint16_t length)
+		void send(uint8_t *packet, std::unsigned_integral auto length)
 		{
 			// client sends network packet
 			_send(boost::asio::buffer(packet, length));
@@ -333,7 +339,7 @@ class P2P
 		}
 
 		// send network packet to address
-		void send(boost::asio::ip::tcp::socket &sender, uint8_t *packet, uint16_t length)
+		void send(boost::asio::ip::tcp::socket &sender, uint8_t *packet, std::unsigned_integral auto length)
 		{
 			// client sends network packet
 			_send(sender, boost::asio::buffer(packet, length));
@@ -355,11 +361,13 @@ class P2P
 			for(auto &client : clients) {
 				boost::asio::async_write(client, boost::asio::buffer(dat, dat_len), [&](boost::system::error_code ec, uint64_t) {
 					if (ec) {
-						std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-						file << "\nerror in P2P::send_genesis(len, type): " << ec.message();
-						file.close();
+						if(log_network_issues) {
+							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+							file << "\nerror in P2P::send_genesis(len, type): " << ec.message();
+							file.close();
+						}
 					}
-					});
+				});
 			}
 			delete[] dat;
 		}
@@ -372,9 +380,11 @@ class P2P
 			uint8_t dat_len = Packet<uint8_t*>::set_info(dat, len, type);
 			boost::asio::async_write(sender, boost::asio::buffer(dat, dat_len), [&](boost::system::error_code ec, uint64_t) {
 				if (ec) {
-					std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-					file << "\nerror in P2P::send_genesis(address, len, type): " << ec.message();
-					file.close();
+					if(log_network_issues) {
+						std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+						file << "\nerror in P2P::send_genesis(address, len, type): " << ec.message();
+						file.close();
+					}
 				}
 			});
 			delete[] dat;
@@ -385,13 +395,13 @@ class P2P
 		// data: whole data received
 		// packet_size: packet size of the received packet, this is for knowing how much of the array is valid
 		// return: who sent the message
-		boost::asio::ip::tcp::socket *recv(uint8_t *data, uint16_t &packet_size)
+		boost::asio::ip::tcp::socket *recv(uint8_t *data, std::unsigned_integral auto &packet_size)
 		{
 			return _recv(boost::asio::buffer(data, packet_size));
 		}
 
 		// same as function above + receiver: find_to_send(address)
-		void recv(boost::asio::ip::tcp::socket &receiver, uint8_t *data, uint16_t &packet_size)
+		void recv(boost::asio::ip::tcp::socket &receiver, uint8_t *data, std::unsigned_integral auto &packet_size)
 		{
 			_recv(receiver, boost::asio::buffer(data, packet_size));
 		}
@@ -425,16 +435,49 @@ class P2P
 		// RUN this function using another thread, this means there are 3 threads for communiciation, 2 for receiver, 1 for sender.
 		bool recv_full(uint8_t *dat, uint64_t &length, Packet<>::format &type,
 					   boost::asio::ip::tcp::socket *received_from, Cryptography::ProtocolData &protocol,
-					   Cryptography::Decipher decipher, auto got_decipher)
+					   Cryptography::Decipher decipher, auto got_decipher, Cryptography::Hmac hmac)
 		{
 			// first receive genesis packet
 			uint8_t type_;
+			uint8_t *iv = protocol.generate_iv();
 			received_from = recv_genesis(length, type_);
 			if(received_from == nullptr) {
 				return 0; // no one is sending
 			}
-			type = ((uint16_t)type_<<5);
+			type = (uint16_t)type_<<5; // converted to uint16 so that the shift doesn't overflow
 
+			// receive full packet
+			uint8_t *data = new uint8_t[length];
+			recv(*received_from, dat, length);
+
+			// data format: MAC + IV + DATA
+			memcpy(&hmac.get_mac()[0], dat, protocol.mac_size); // get mac
+			memcpy(iv, dat, protocol.iv_size); // get iv
+			
+			uint64_t pt_len; // plaintext length
+			uint16_t security_len = protocol.mac_size + protocol.iv_size;
+			length -= security_len; // subtract mac and iv from dat size because it's no longer important
+
+			// decrypt
+			decipher.assign_iv(iv);
+			decipher.set_key(got_decipher);
+			decipher.decrypt(got_decipher, &data[security_len], length, dat, pt_len, 0);
+			length = pt_len; // set length of dat
+
+			// verify
+			bool verified = hmac.verify(dat, pt_len);
+
+			delete[] iv;
+			delete[] data;
+
+			// add to log if user wants network log
+			if(log_network_issues) {
+				
+			}
+
+			return verified;
+
+			/* received data by manually creating the packets
 			// receive all data based on ciphertext length
 			if(length <= type) { // if single packet message
 				uint8_t *ct = new uint8_t[length]; // ciphertext
@@ -470,6 +513,7 @@ class P2P
 				}
 				delete[] ct;
 			}
+			*/
 			return 1;
 		}
 
@@ -487,11 +531,25 @@ class P2P
 		// 	length: length of data
 		// 	type: type of message
 		// 	got_cipher: cipher.get_cipher();
+		// 	verifier: hmac/ecdsa, *******ONLY SUPPORTS HMAC FOR NOW*******
 		void send_full(Packet_T_Type auto dat, uint64_t length, Packet<>::format type,
 					   Cryptography::ProtocolData &protocol,
-					   Cryptography::Cipher &cipher, auto got_cipher)
+					   Cryptography::Cipher &cipher, auto got_cipher, Cryptography::Hmac verifier)
 		{
-			uint8_t *data;
+			uint8_t *data; // ciphertext data
+
+			// data format: MAC + IV + DATA
+
+			// find length of full data to send:
+			uint8_t div = (protocol.ct_size/protocol.block_size)-1; // ratio of ciphertext length to plaintext length
+			uint16_t length_per_pt = (uint16_t)type/(div+1); // get plaintext packet size. E.g. For text aes256 (1024B packet): 1024/(32/16) = 512B plaintext
+			const uint16_t security_len = protocol.mac_size + protocol.iv_size;
+			uint64_t len = (length + (protocol.block_size - length%protocol.block_size))<<div; // ciphertext length
+			uint64_t full_len = len+security_len;
+			uint8_t *iv = protocol.generate_iv(); // get new iv
+			data = new uint8_t[full_len];
+
+			// copy plaintext data to data
 
 			// first make sure data is of type uint8_t*
 			if constexpr(std::same_as<decltype(dat), std::string>) {
@@ -499,17 +557,33 @@ class P2P
 				data = new uint8_t[length];
 				memcpy(data, (uint8_t*)dat.c_str(), length);
 			} else {
-				data = dat;
+				memcpy(&data[security_len], dat, length); // copy the data
 			}
 
-			// partition data (if required), encrypt and send
-			uint8_t div = (protocol.ct_size/protocol.block_size)-1; // ratio of ciphertext length to plaintext length
-			uint16_t length_per_pt = (uint16_t)type/(div+1); // get plaintext packet size. E.g. For text aes256 (1024B packet): 1024/(32/16) = 512B plaintext
-			uint64_t len = (length + (protocol.block_size - length%protocol.block_size))<<div; // ciphertext length
-			uint8_t *partition;
+			// encrypt
+			cipher.assign_iv(iv);
+			cipher.set_key(got_cipher); // set key with iv
+			cipher.encrypt(got_cipher, dat, length, &data[security_len], len, 1);
+
+			// generate HMAC
+			verifier.generate(dat, length);
+
+			// copy mac and iv
+			memcpy(data, verifier.mac, protocol.mac_size);
+			memcpy(&data[protocol.mac_size], iv, protocol.iv_size);
 
 			// send genesis packet
 			send_genesis(len, (uint16_t)type>>5);
+
+			// send data, tcp will break down the data
+			send(data, full_len);
+
+			delete[] iv;
+			delete[] data;
+			/*
+
+			// partition data (if required), encrypt and send
+			uint8_t *partition;
 
 			// if length <= packet size, send as a single packet of size length, else: send as segments with length of packet size (type)
 			if(len <= type) { // if only one packet required
@@ -562,6 +636,7 @@ class P2P
 				delete[] data; // doesn't delete the pointer given as function parameter
 				
 			}
+			*/
 		}
 
 
@@ -583,9 +658,11 @@ class P2P
 						if (!ec) {
 							PacketParser<>::get_info(dat, len, type);
 						} else {
-							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-							file << "\nerror in P2P::recv_genesis(length, packet_size): " << ec.message();
-							file.close();
+							if(log_network_issues) {
+								std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+								file << "\nerror in P2P::recv_genesis(length, packet_size): " << ec.message();
+								file.close();
+							}
 						}
           			});
 					delete[] dat;
@@ -607,9 +684,11 @@ class P2P
 				if (!ec) {
 					PacketParser<uint8_t*>::get_info(dat, len, type);
 				} else {
-					std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-					file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
-					file.close();
+					if(log_network_issues) {
+						std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+						file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
+						file.close();
+					}
 				}
           	});
 			delete[] dat;
@@ -641,12 +720,12 @@ class P2P
 				// client sends network packet
 				for(auto &client : clients) {
 					boost::asio::async_write(client, packet, [&](boost::system::error_code ec, uint64_t) {
-						if (ec) {
+						if (ec && log_network_issues) {
 							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
 							file << "\nerror in P2P::_send(packet): " << ec.message();
 							file.close();
 						}
-						});
+					});
 				}
 			}
 
@@ -655,7 +734,7 @@ class P2P
 			{
 				// send network packet to client
 				boost::asio::async_write(sender, packet, [&](boost::system::error_code ec, uint64_t) {
-					if (ec) {
+					if (ec && log_network_issues) {
 						std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
 						file << "\nerror in P2P::_send(ip, packet): " << ec.message();
 						file.close();
@@ -666,9 +745,8 @@ class P2P
 		// only receive from this address
 		void _recv(boost::asio::ip::tcp::socket &receiver, Boost_Buffer_Type auto data)
 		{
-			boost::asio::async_read(receiver, data, [&](boost::system::error_code ec, 
-																				   uint64_t) {
-				if (ec) {
+			boost::asio::async_read(receiver, data, [&](boost::system::error_code ec, uint64_t) {
+				if (ec && log_network_issues) {
 					std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
 					file << "\nerror in P2P::recv(address, data, packet_size): " << ec.message();
 					file.close();
@@ -681,15 +759,14 @@ class P2P
 			for(auto &server : servers) {
 				size_t tmp = server.available();
 				if(tmp) {
-					boost::asio::async_read(server, data, [&](boost::system::error_code ec, 
-																						   uint64_t) {
-						if (ec) {
+					boost::asio::async_read(server, data, [&](boost::system::error_code ec, uint64_t) {
+						if(ec && log_network_issues) {
 							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
 							file << "\nerror in P2P::recv(data, packet_size): " << ec.message();
 							file.close();
 						}
           			});
-					return &server;
+				return &server;
 				}
 			}
 			return nullptr; // received from no one
