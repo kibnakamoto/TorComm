@@ -367,6 +367,16 @@ Cryptography::Cipher::Cipher(ProtocolData &protocol, uint8_t *key, uint8_t *iv) 
 	this->iv = iv; // no need to destroy key since it's not allocated here.
 }
 
+void Cryptography::Cipher::assign_iv(uint8_t *iv)
+{
+	this->iv = iv;
+}
+
+void Cryptography::Cipher::assign_key(uint8_t *key)
+{
+	this->key = key;
+}
+
 // set key with iv
 void Cryptography::Cipher::set_key(auto cipher)
 {
@@ -516,6 +526,18 @@ void Cryptography::Decipher::decrypt(auto &ct, uint16_t ct_len, uint8_t *&pt, ui
 		// 		filter.MessageEnd();
 		// 		break;
 		// }
+}
+
+// assign iv
+void Cryptography::Decipher::assign_iv(uint8_t *iv)
+{
+	this->iv = iv;
+}
+
+// assign key
+void Cryptography::Decipher::assign_key(uint8_t *key)
+{
+	this->key = key;
 }
 
 // set key with iv
@@ -681,6 +703,12 @@ Cryptography::Hmac::Hmac(ProtocolData &protocol, uint8_t *key) : protocol(protoc
 Cryptography::Hmac::~Hmac()
 {
 	delete[] mac;
+}
+
+// get mac
+uint8_t *Cryptography::Hmac::get_mac()
+{
+	return mac;
 }
 
 // generate the HMAC code
