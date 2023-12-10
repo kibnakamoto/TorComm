@@ -1,3 +1,21 @@
+ /* Copyright (c) 2023 Taha
+  * this program is free software: you can redistribute it and/or modify
+  * it under the terms of the gnu general public license as published by
+  * the free software foundation, either version 3 of the license, or
+  * (at your option) any later version.
+  * this program is distributed in the hope that it will be useful,
+  * but without any warranty; without even the implied warranty of
+  * merchantability or fitness for a particular purpose.  see the
+  * gnu general public license for more details.
+  * you should have received a copy of the gnu general public license
+  * along with this program.  if not, see <https://www.gnu.org/licenses/>.
+  *
+  * Author: Taha
+  * Date: 2023, Dec 9
+  * Description: This is the main file of this project. This is for people to securely communicate over a public channel using a P2P system (TCP/IPv6). 
+  */
+
+
 #include <boost/filesystem/operations.hpp>
 #include <cstdio>
 #include <iostream>
@@ -18,19 +36,24 @@
  * MAJOR BUG DETECTED: overflow of uint16_t values because they are assigned uint64_t for networking - Dec 3, 2023
    					   Possibly debugged, needs further checking - Dec 7, 2023
    					   Check finished - Dec 9, 2023
+ *  TODO: hmac/iv with recv_full and send full, this would only apply to data that can fit in the ram available. Otherwise, apply the large data solution defined in the previous todo - Dec 2, 2023
+ */
+
+/* FUTURE TODOS: (Not for version 1.0)
+ *
+ * TODO: while receving and sending fully, make sure that large files are treated properly, don't read the whole data into a byte array but rather read as partitions into an array. This is for really large files where the ram isn't enough,this means remove the Packet/PacketParser classes
+ * TODO: hmac/iv for when there are multiple indivisual encrypted packets - Dec 2, 2023
+ * TODO: add ecdsa support on send/recv and protocol data sizes
  */
 
 /* NOT DONE:
  * TODO: define network packet construction and destruction (Packet class, PacketParser class)
  * TODO: define key exchanging for 2 peer communication 
  * TODO: define key exchanging for multi peer communication 
- * TODO: add ecdsa support on send/recv and protocol data sizes
  *
- * TODO: while receving and sending fully, make sure that large files are treated properly, don't read the whole data into a byte array but rather read as partitions into an array. This is for really large files where the ram isn't enough,this means remove the Packet/PacketParser classes
  */
 
 /* MAJOR:
- *  TODO: hmac/iv with recv_full and send full, this would only apply to data that can fit in the ram available. Otherwise, apply the large data solution defined in the previous todo - Dec 2, 2023
  */
 
 int main()
