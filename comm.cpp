@@ -32,28 +32,8 @@
 // https://github.com/sehe/asio-socks45-client/tree/main
 //
 
-template<typename T>
-PacketParser<T>::PacketParser(T packet)
-{
-	data = packet;
-	//switch (format)
-	//{
-	//	case Message::TEXT:
-	//		;
-	//	case Message::IMAGE:
-	//		;
-	//	case Message::VIDEO:
-	//		;
-	//	case Message::_FILE_:
-	//		;
-	//	case Message::DELETE:
-	//		;
-	//}
-}
-
 // get the first 72-bits of data from packet
-template<typename T>
-void PacketParser<T>::get_info(uint8_t *dat, uint64_t &len, uint8_t &type)
+void get_info(uint8_t *dat, uint64_t &len, uint8_t &type)
 {
 	// get length and type
 	len=0;
@@ -64,17 +44,9 @@ void PacketParser<T>::get_info(uint8_t *dat, uint64_t &len, uint8_t &type)
 	type = dat[8];
 }
 
-// packet construction for sending
-template<typename T>
-Packet<T>::Packet(T message, std::string tm, Settings settings)
-{
-	msg = message;
-	timestamp = tm;
-}
 
 // set the first 72-bits of data from packet
-template<typename T>
-uint8_t Packet<T>::set_info(uint8_t *dat, uint64_t len, uint8_t type)
+uint8_t set_info(uint8_t *dat, uint64_t len, uint8_t type)
 {
 	dat = new uint8_t[9];
 
