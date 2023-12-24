@@ -36,7 +36,7 @@
  * MAJOR BUG DETECTED: overflow of uint16_t values because they are assigned uint64_t for networking - Dec 3, 2023
    					   Possibly debugged, needs further checking - Dec 7, 2023
    					   Check finished - Dec 9, 2023
- *  TODO: hmac/iv with recv_full and send full, this would only apply to data that can fit in the ram available. Otherwise, apply the large data solution defined in the previous todo - Dec 2, 2023
+ * hmac/iv with recv_full and send full, this would only apply to data that can fit in the ram available. Otherwise, apply the large data solution defined in the previous todo - Dec 2, 2023
  */
 
 /* FUTURE TODOS: (Not for version 1.0)

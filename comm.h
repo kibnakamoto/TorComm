@@ -70,37 +70,7 @@ concept Boost_Buffer_Type = requires(T t)
 // For parsing received network packets
 // parse packet to get text, images, videos, or delete
 // then use Message class to 
-template<Packet_T_Type T=uint8_t*>
-class PacketParser
-{
-	public:
-			T data;
-			uint8_t type;
-
-			PacketParser(T packet);
-
-			// get the data information from data
-			// dat: data where len and type are stored as bytes
-			// len: length
-			// type: type of message (TEXT, IMAGE, etc)
-			static void get_info(uint8_t *dat, uint64_t &len, uint8_t &type);
-
-			// parser functions, they return the parsed output, seperate the parts of the message
-			// len: uninitialized
-			// type: uninitialized
-			// returns uint8_t* or std::string
-
-			T p_text(uint8_t *packet, uint64_t &len, uint8_t &type);
-
-			T p_image(uint8_t *packet, uint64_t &len, uint8_t &type);
-
-			T p_video(uint8_t *packet, uint64_t &len, uint8_t &type);
-
-			T p_file(uint8_t *packet, uint64_t &len, uint8_t &type);
-
-			T p_delete(uint8_t *packet, uint64_t &len, uint8_t &type);
-};
-
+static void get_info(uint8_t *dat, uint64_t &len, uint8_t &type);
 
 
 // ONCE RECEIVED
@@ -118,61 +88,21 @@ class PacketParser
  * assigning a timestamp to when the message was received
  */ 
 
-// For creating network packets to send
-// parse packet to set text, images, videos, or delete, once ready 
-template<Packet_T_Type T=uint8_t*>
-class Packet
-{
-	public:
-			std::string timestamp; // time of message
-			T data;
-			uint8_t type; // text, images, videos, delete
-
-			Packet(T packet);
-			T msg; // plaintext message to receive
-
-			// The Buffer sizes are NOT CONSTANT, these numbers are for SEGMENTS OF DATA. E.g. 1 byte text message will be sent as 1 byte, not 1024 bytes
-			// aes-256 encrypted message block sizes, divide by 2 for msg lengths, encrypted length of aes-256
-			
-			// This is ciphertext size, not plaintext. All data will be send as ciphertext
-			// This is counting padding
-			// They are set to be a multiple of 32msg_type
-			// WHEN SENDING GENESIS PACKET, SEND (FORMAT >> 5), OR DIVIDE BY 32. This is to make sure the format fits in a byte
-			enum format {
-				TEXT    = 1024,  // 0x0400   - Default text buffer size, while using, it can be different
-				IMAGE   = 1504,  // 0x05e0
-				VIDEO   = 2048,  // 0x0800
-				_FILE_  = 1600, // 0x640
-				DELETE  = 0,     // 0x0000   - No packet
-			};
-
-
-			// message and time (optional)
-			Packet(T message, std::string tm, Settings settings);
-
-			// get the data information from data
-			// dat: bytearray of len and type
-			// len: length
-			// type: type of message (TEXT, IMAGE, etc)
-			// return: length of dat
-			static uint8_t set_info(uint8_t *dat, uint64_t len, uint8_t type);
-
-			// parser functions, they return the parsed output, seperate the parts of the message
-			// len: uninitialized
-			// type: uninitialized
-			// returns uint8_t* or std::string
-
-			T p_text(uint8_t *packet, uint64_t &len, uint8_t &type);
-
-			T p_image(uint8_t *packet, uint64_t &len, uint8_t &type);
-
-			T p_video(uint8_t *packet, uint64_t &len, uint8_t &type);
-
-			T p_file(uint8_t *packet, uint64_t &len, uint8_t &type);
-
-			T p_delete(uint8_t *packet, uint64_t &len, uint8_t &type);
+enum DATA_FORMAT {
+	TEXT    = 1024,  // 0x0400   - Default text buffer size, while using, it can be different
+	IMAGE   = 1504,  // 0x05e0
+	VIDEO   = 2048,  // 0x0800
+	_FILE_  = 1600,  // 00x640   - Also includes ZIP files.
+	DELETE  = 16,    // 0x0010   - send which data to delete
 };
 
+
+// get the data information from data
+// dat: bytearray of len and type
+// len: length
+// type: type of message (TEXT, IMAGE, etc)
+// return: length of dat
+static uint8_t set_info(uint8_t *dat, uint64_t len, uint8_t type);
 
 // PROTOTYPIC:
 // Message structure for the first packet in communciation, First 4 bytes of message is message length, the rest is message, this is only on first message block
@@ -182,7 +112,7 @@ class Packet
 // struct GenesisPacket
 // {
 // 	uint64_t msg_len;
-// 	uint8_t msg_type; // Message::format
+// 	uint8_t msg_type;
 // 	T msg;
 // };
 // 
@@ -375,7 +305,7 @@ class P2P
 		{
 			// client sends network packet
 			uint8_t *dat;
-			uint8_t dat_len = Packet<uint8_t*>::set_info(dat, len, type);
+			uint8_t dat_len = set_info(dat, len, type);
 			for(auto &client : clients) {
 				boost::asio::async_write(client, boost::asio::buffer(dat, dat_len), [&](boost::system::error_code ec, uint64_t) {
 					if (ec) {
@@ -395,7 +325,7 @@ class P2P
 		{
 			// client sends network packet
 			uint8_t *dat;
-			uint8_t dat_len = Packet<uint8_t*>::set_info(dat, len, type);
+			uint8_t dat_len = set_info(dat, len, type);
 			boost::asio::async_write(sender, boost::asio::buffer(dat, dat_len), [&](boost::system::error_code ec, uint64_t) {
 				if (ec) {
 					if(log_network_issues) {
@@ -451,7 +381,7 @@ class P2P
 		// all parameters are empty until received_from (including), 
 		// return: successfully received, false if no one is sending
 		// RUN this function using another thread, this means there are 3 threads for communiciation, 2 for receiver, 1 for sender.
-		bool recv_full(uint8_t *dat, uint64_t &length, Packet<>::format &type,
+		bool recv_full(uint8_t *dat, uint64_t &length, DATA_FORMAT &type,
 					   boost::asio::ip::tcp::socket *received_from, Cryptography::ProtocolData &protocol,
 					   Cryptography::Decipher decipher, auto got_decipher, Cryptography::Hmac hmac)
 		{
@@ -544,13 +474,14 @@ class P2P
 		// 6. else:
 		// 			send all the packets with packet size, sending doesn't need padding for the last packet, receiving does, so the last packet will be received with: length modulo packet size
 
+		// NOTE: if data size is larger than the ram can handle, send in segments. This isn't defined yet. It is necesarry for large data. The main problem is that data would be encrypted in segments which means that every encrypted segment would need it's own IV.
 		// 	This function is for the whole send protocol for a single message.
 		// 	data: plaintext data (string or uint8_t*)
 		// 	length: length of data
 		// 	type: type of message
 		// 	got_cipher: cipher.get_cipher();
 		// 	verifier: hmac/ecdsa, *******ONLY SUPPORTS HMAC FOR NOW*******
-		void send_full(Packet_T_Type auto dat, uint64_t length, Packet<>::format type,
+		void send_full(Packet_T_Type auto dat, uint64_t length, DATA_FORMAT type,
 					   Cryptography::ProtocolData &protocol,
 					   Cryptography::Cipher &cipher, auto got_cipher, Cryptography::Hmac verifier)
 		{
@@ -674,7 +605,7 @@ class P2P
 					boost::asio::async_read(server, boost::asio::buffer(dat, packet_size), [&](boost::system::error_code ec, 
 																						   uint64_t) {
 						if (!ec) {
-							PacketParser<>::get_info(dat, len, type);
+							get_info(dat, len, type);
 						} else {
 							if(log_network_issues) {
 								std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
@@ -700,7 +631,7 @@ class P2P
 			boost::asio::async_read(receiver, boost::asio::buffer(dat, packet_size), [&](boost::system::error_code ec, 
 																				   uint64_t) {
 				if (!ec) {
-					PacketParser<uint8_t*>::get_info(dat, len, type);
+					get_info(dat, len, type);
 				} else {
 					if(log_network_issues) {
 						std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
