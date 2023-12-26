@@ -37,13 +37,17 @@
 
 // limits of single message sizes
 // If a single message is larger, it might just be a DOS attack so ask the user if they want to receive such a large file
-// The actual limit is UINT64_MAX: 18,446,744,073,709,551,615
+// The actual limit is 18,446,744 TB (UINT64_MAX)
 enum SIZE_LIMITS {
 	MAX_TEXT_SIZE   = 8192,        // 0x00002000  - 2^13: up to 4KB message
-	MAX_IMAGE_SIZE  = 1073741824,  // 0x40000000  - 2^30: up to 512MB image
-	MAX_FILE_SIZE   = 4294967296,  // 0x100000000 - 2^32: up to 2GB file
-	MAX_VIDEO_SIZE  = 8589934592,  // 0x200000000 - 2^33: up to 4GB video
-    MAX_DELETE_SIZE = 0,        // 0x00000000  - Doesn't need a limit
+	MAX_FILE_SIZE   = 8589934592, // 0x200000000- 2^34: up to 8GB file
+    MAX_DELETE_SIZE = 32,          // 0x00000020  - Doesn't need a limit, same size as packet size
+};
+
+// if sizes are less than these, no segmentation needed
+enum NO_SEGMENTATION_SIZES {
+	// NSEG_TEXT_SIZE   = 8192,        // 0x00000400  - 2^14: up to 8KB message    // TEXT SIZE UNNECESARRY
+	NSEG_FILE_SIZE   = 268435456,   // 0x10000000  - 2^29: up to 268MB file
 };
 
 // type of Packet template T
@@ -90,10 +94,8 @@ static void get_info(uint8_t *dat, uint64_t &len, uint8_t &type);
 
 enum DATA_FORMAT {
 	TEXT    = 1024,  // 0x0400   - Default text buffer size, while using, it can be different
-	IMAGE   = 1504,  // 0x05e0
-	VIDEO   = 2048,  // 0x0800
-	_FILE_  = 1600,  // 00x640   - Also includes ZIP files.
-	DELETE  = 16,    // 0x0010   - send which data to delete
+	_FILE_  = 2048,  // 00x640   - All types of files
+	DELETE  = 32,    // 0x0010   - send which data to delete, 32 because it will shifted by 5
 };
 
 
@@ -180,7 +182,7 @@ class P2P
 		boost::asio::ip::v6_only ipv6_option{true};
 		std::string local_key_path; // keys file
 		Blocked blocked;
-		inline static uint32_t max_requests = 10; // the total amount of receive requests that can be made before quitting
+		// inline static uint32_t max_requests = 10; // the total amount of receive requests that can be made before quitting
 
 		P2P(uint16_t port, Blocked blocked) : listener(boost::asio::ip::tcp::acceptor(io_context, {{}, port}, true)),
 											  resolver(io_context)
@@ -244,12 +246,10 @@ class P2P
 		}
 
 		// connect to their server even if blocked
-		#pragma GCC diagnostic push
-		#pragma GCC diagnostic ignored "-Wunused-parameter"
 		void connect()
 		{
 			auto &socket = servers.emplace_back(io_context); // start socket
-			boost::asio::async_connect(socket, endpoints, [this](boost::system::error_code ec, boost::asio::ip::tcp::endpoint endpoint) {
+			boost::asio::async_connect(socket, endpoints, [this](boost::system::error_code ec, boost::asio::ip::tcp::endpoint) {
 				if (ec) {
 					servers.pop_back(); // remove last element because there is an error
 					if(log_network_issues) {
@@ -260,7 +260,6 @@ class P2P
 				}
 			});
 		}
-		#pragma GCC diagnostic pop
 
 		// start the assynchronous connections. All connections are queued up until now
 		void start_async()
@@ -378,12 +377,13 @@ class P2P
 		// length: length of dat
 		// type: type of message
 		// received_from: the socket which received this data
-		// all parameters are empty until received_from (including), 
+		// file_path: if data type is a file, save to file
+		// all parameters are empty until received_from (including),
 		// return: successfully received, false if no one is sending
 		// RUN this function using another thread, this means there are 3 threads for communiciation, 2 for receiver, 1 for sender.
 		bool recv_full(uint8_t *dat, uint64_t &length, DATA_FORMAT &type,
 					   boost::asio::ip::tcp::socket *received_from, Cryptography::ProtocolData &protocol,
-					   Cryptography::Decipher decipher, auto got_decipher, Cryptography::Hmac hmac)
+					   Cryptography::Decipher decipher, auto got_decipher, Cryptography::Hmac hmac, std::string file_path="")
 		{
 			// first receive genesis packet
 			uint8_t type_;
@@ -417,11 +417,6 @@ class P2P
 
 			delete[] iv;
 			delete[] data;
-
-			// add to log if user wants network log
-			if(log_network_issues) {
-				
-			}
 
 			return verified;
 
@@ -465,18 +460,30 @@ class P2P
 			return 1;
 		}
 
-		// SEND PROTOCOL:
+		private:
+		// prepare file to send, add file-name
+		inline void prepare_file(uint8_t *data, std::string file_name, uint16_t file_name_len)
+		{
+			// FILE PACKET FORMAT:
+			// 2-byte length of file-name + file-name + file-contents
+			// when sending the genesis packet, make sure that the length contains the 2-byte length of file-name + file-name (file-name-length + 2)
+			data[0] = file_name_len >> 8;
+			data[1] = file_name_len & 0xff;
+			memcpy(&data[2], file_name.c_str(), file_name_len); // add the file name
+		}
+
+		public:
+
+		// SEND PROTOCOL (TEXT):
 		// 1. pad plaintext to the required plaintext size
 		// 2. encrypt plaintext
-		// 3. send_genesis to send length and type of message (TEXT, VIDEO, etc.)
-		// 4. if ciphertext length smaller than packet size:
-		// 5.		send the packet of message with ciphertext length rather than packet size because there will only be one packet
-		// 6. else:
-		// 			send all the packets with packet size, sending doesn't need padding for the last packet, receiving does, so the last packet will be received with: length modulo packet size
+		// 3. send_genesis to send length and type of message (TEXT, _FILE_, etc.)
+		// send the packet in one segment. The segmentation will be done by asio tcp
+		//
 
-		// NOTE: if data size is larger than the ram can handle, send in segments. This isn't defined yet. It is necesarry for large data. The main problem is that data would be encrypted in segments which means that every encrypted segment would need it's own IV.
+		// NOTE: if data size is larger than the ram can handle, send in segments. It is necesarry for large data.
 		// 	This function is for the whole send protocol for a single message.
-		// 	data: plaintext data (string or uint8_t*)
+		// 	data: plaintext data (string or uint8_t*), if length is bigger than NO_SEGMENTATION_SIZES, this is a string file-path (IF type is _FILE_)
 		// 	length: length of data
 		// 	type: type of message
 		// 	got_cipher: cipher.get_cipher();
@@ -486,33 +493,117 @@ class P2P
 					   Cryptography::Cipher &cipher, auto got_cipher, Cryptography::Hmac verifier)
 		{
 			uint8_t *data; // ciphertext data
+			const uint16_t security_len = protocol.mac_size + protocol.iv_size;
+			uint8_t div = (protocol.ct_size/protocol.block_size)-1; // ratio of ciphertext length to plaintext length
 
-			// data format: MAC + IV + DATA
+			// data format for text: MAC + IV + DATA
+			// data format for file: MAC + IV + file-name length + file-name + DATA
+
+			// if file type, then make sure to segment data before sending in segments. This is because the file can get really large and not fit in ram
+			if(type == DATA_FORMAT::_FILE_) {
+				// assumes dat is string file path
+				static_assert(std::is_same<decltype(dat), std::string>()); // make sure type is correct, otherwise there is a bug
+
+				// calculate length of file-name + file-length variable
+				// the file name length is kept in a 2-byte variable, if overfills, it will send the parts of name that fits
+				const size_t file_name_length = dat.length();
+				const uint16_t file_name_len = file_name_length > UINT16_MAX ? UINT16_MAX : (uint16_t)file_name_length;
+				uint32_t data_start_index = 2 + (uint32_t)file_name_len; // this is the index where the file content start.
+				uint8_t *packet;
+				uint8_t *iv;
+
+				// no segmentation needed
+				if(length <= NO_SEGMENTATION_SIZES::NSEG_FILE_SIZE) {
+					iv = protocol.generate_iv(); // get new iv
+					const uint32_t data_len = data_start_index + length; // here, length is smaller or equal to 2^29 so this can be uint32_t
+					const uint32_t cipher_len = (data_len + (protocol.block_size - data_len%protocol.block_size))<<div; // ciphertext length
+					data = new uint8_t[data_len]; // contains plaintext file name, data
+					const uint64_t packet_len = security_len + cipher_len;
+					packet = new uint8_t[packet_len]; // contains mac, iv ciphertext file name and data
+				
+					// send genesis packet
+					send_genesis(packet_len, (uint16_t)type>>5);
+
+					// copy file-name length (2-byte) and file name
+					prepare_file(data, dat, file_name_len);
+
+					// read file data
+					std::ifstream in(dat);
+					in.read(reinterpret_cast<char*>(&data[data_start_index]), length);
+
+					// encrypt
+					cipher.assign_iv(iv);
+					cipher.set_key(got_cipher); // set key with iv
+					cipher.encrypt(got_cipher, data, data_len, &packet[security_len], cipher_len, 1);
+
+					// generate HMAC
+					verifier.generate(data, data_len);
+
+					// copy mac and iv
+					memcpy(packet, verifier.get_mac(), protocol.mac_size);
+					memcpy(&packet[protocol.mac_size], iv, protocol.iv_size);
+
+					// send data, tcp will break down the data
+					send(packet, packet_len);
+
+				} else { // data requires segmentation: TODO: needs fixing
+					const uint16_t cipher_len = (type + (protocol.block_size - type%protocol.block_size))<<div; // ciphertext length per packet
+					const uint16_t packet_len = security_len + cipher_len;
+					packet = new uint8_t[packet_len]; // contains mac, iv ciphertext file name and data
+					data = new uint8_t[type]; // plaintext data segment
+					iv = new uint8_t[protocol.iv_size];
+					CryptoPP::AutoSeededRandomPool rnd;
+
+					// send genesis packet
+					send_genesis(packet_len, (uint16_t)type>>5);
+
+					// add file name to the first packet
+					prepare_file(data, dat, file_name_len);
+
+					std::ifstream in(dat);
+					while(in.good()) {
+						// read the segment of data from file
+						in.read(reinterpret_cast<char*>(&data[data_start_index]), type-data_start_index);
+					    std::streamsize s=in.gcount();
+						rnd.GenerateBlock(iv, protocol.iv_size); // generate new iv
+
+						// encrypt
+						cipher.assign_iv(iv);
+						cipher.set_key(got_cipher); // set key with iv
+						cipher.encrypt(got_cipher, data, type, &packet[security_len], cipher_len, 1);
+	
+						// generate HMAC
+						verifier.generate(data, type);
+
+						// copy mac and iv
+						memcpy(packet, verifier.get_mac(), protocol.mac_size);
+						memcpy(&packet[protocol.mac_size], iv, protocol.iv_size);
+
+						// send packet by packet
+						send(packet, packet_len);
+						
+						data_start_index = 0; // at first, needs to be 2 + file_name_len because it's the first packet with data and needs to have file name
+					}
+				}
+				delete[] data;
+				delete[] packet;
+				delete[] iv;
+
+				return;
+			}
+
+			// For text or delete:
 
 			// find length of full data to send:
-			uint8_t div = (protocol.ct_size/protocol.block_size)-1; // ratio of ciphertext length to plaintext length
-			uint16_t length_per_pt = (uint16_t)type/(div+1); // get plaintext packet size. E.g. For text aes256 (1024B packet): 1024/(32/16) = 512B plaintext
-			const uint16_t security_len = protocol.mac_size + protocol.iv_size;
 			uint64_t len = (length + (protocol.block_size - length%protocol.block_size))<<div; // ciphertext length
 			uint64_t full_len = len+security_len;
 			uint8_t *iv = protocol.generate_iv(); // get new iv
 			data = new uint8_t[full_len];
 
-			// copy plaintext data to data
-
-			// first make sure data is of type uint8_t*
-			if constexpr(std::same_as<decltype(dat), std::string>) {
-				// if string, then data is probably short enough to be copied to another container without wasting ram
-				data = new uint8_t[length];
-				memcpy(data, (uint8_t*)dat.c_str(), length);
-			} else {
-				memcpy(&data[security_len], dat, length); // copy the data
-			}
-
 			// encrypt
 			cipher.assign_iv(iv);
 			cipher.set_key(got_cipher); // set key with iv
-			cipher.encrypt(got_cipher, dat, length, &data[security_len], len, 1);
+			cipher.encrypt(got_cipher, (uint8_t*) (&dat[0]), length, &data[security_len], len, 1);
 
 			// generate HMAC
 			verifier.generate(dat, length);
@@ -522,7 +613,7 @@ class P2P
 			memcpy(&data[protocol.mac_size], iv, protocol.iv_size);
 
 			// send genesis packet
-			send_genesis(len, (uint16_t)type>>5);
+			send_genesis(full_len, (uint16_t)type>>5);
 
 			// send data, tcp will break down the data
 			send(data, full_len);
@@ -533,6 +624,7 @@ class P2P
 
 			// partition data (if required), encrypt and send
 			uint8_t *partition;
+			uint16_t length_per_pt = (uint16_t)type/(div+1); // get plaintext packet size. E.g. For text aes256 (1024B packet): 1024/(32/16) = 512B plaintext
 
 			// if length <= packet size, send as a single packet of size length, else: send as segments with length of packet size (type)
 			if(len <= type) { // if only one packet required
