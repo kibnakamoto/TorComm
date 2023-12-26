@@ -41,13 +41,13 @@
 
 /* FUTURE TODOS: (Not for version 1.0)
  *
- * TODO: while receving and sending fully, make sure that large files are treated properly, don't read the whole data into a byte array but rather read as partitions into an array. This is for really large files where the ram isn't enough,this means remove the Packet/PacketParser classes
  * TODO: hmac/iv for when there are multiple indivisual encrypted packets - Dec 2, 2023
  * TODO: add ecdsa support on send/recv and protocol data sizes
  */
 
 /* NOT DONE:
- * TODO: define network packet construction and destruction (Packet class, PacketParser class)
+ * TODO: while receving and sending fully, make sure that large files are treated properly, don't read the whole data into a byte array but rather read as partitions into an array. This is for really large files where the ram isn't enough
+ * TODO: define network packet construction and destruction
  * TODO: define key exchanging for 2 peer communication 
  * TODO: define key exchanging for multi peer communication 
  *
