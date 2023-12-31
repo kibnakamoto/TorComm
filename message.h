@@ -606,6 +606,7 @@ namespace Cryptography
 		ProtocolData protocol;
 		uint8_t *key;
 		uint8_t *mac; // output mac
+		bool verified;
 
 		// generator initializer
 		// hmacf: hmac function
@@ -621,6 +622,7 @@ namespace Cryptography
 				~Hmac();
 
 				inline uint8_t *get_mac();
+				inline bool is_verified();
 
 				// generate the HMAC code
 				void generate(uint8_t *pt, uint16_t len);

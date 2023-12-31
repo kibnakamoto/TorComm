@@ -43,11 +43,11 @@
  *
  * TODO: hmac/iv for when there are multiple indivisual encrypted packets - Dec 2, 2023
  * TODO: add ecdsa support on send/recv and protocol data sizes
+ * TODO: Optimize the iv and other pointer allocations only once and take them as a function parameter for more efficiency.
  */
 
 /* NOT DONE:
- * TODO: while receving and sending fully, make sure that large files are treated properly, don't read the whole data into a byte array but rather read as partitions into an array. This is for really large files where the ram isn't enough
- * TODO: define network packet construction and destruction
+ * TODO: while receving and sending fully, make sure that large files are treated properly, don't read the whole data into a byte array but rather read as partitions into an array. This is for really large files where the ram isn't enough - SEND DONE - Dec 30, 2023
  * TODO: define key exchanging for 2 peer communication 
  * TODO: define key exchanging for multi peer communication 
  *

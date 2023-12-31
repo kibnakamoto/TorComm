@@ -711,6 +711,12 @@ uint8_t *Cryptography::Hmac::get_mac()
 	return mac;
 }
 
+// get if verified
+bool Cryptography::Hmac::is_verified()
+{
+	return verified;
+}
+
 // generate the HMAC code
 void Cryptography::Hmac::generate(uint8_t *pt, uint16_t len)
 {
@@ -732,21 +738,20 @@ void Cryptography::Hmac::generate(uint8_t *pt, uint16_t len)
 // verify the HMAC code
 bool Cryptography::Hmac::verify(uint8_t *pt, uint16_t len)
 {
-	bool verify;
 	if(protocol.hash == SHA256) {
 		CryptoPP::HMAC<CryptoPP::SHA256> hmac(key, protocol.key_size);
-		verify = verifier_init(hmac, pt, len);
+		verified = verifier_init(hmac, pt, len);
 	} else if(protocol.hash == SHA512) {
 		CryptoPP::HMAC<CryptoPP::SHA512> hmac(key, protocol.key_size);
-		verify = verifier_init(hmac, pt, len);
+		verified = verifier_init(hmac, pt, len);
 	} else {
 		error = HASHING_ALGORITHM_NOT_FOUND;
 
 		// default values
 		CryptoPP::HMAC<default_hash> hmac(key, protocol.key_size);
-		verify = verifier_init(hmac, pt, len);
+		verified = verifier_init(hmac, pt, len);
 	}
-	return verify;
+	return verified;
 }
 
 std::string get_time()
