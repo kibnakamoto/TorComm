@@ -53,6 +53,17 @@
 // get current time
 std::string get_time();
 
+
+// For pad function
+template<typename T>
+concept PadType = requires(T t)
+{
+	{
+		(std::same_as<T, char> || 
+		 std::same_as<T, uint8_t>)
+	};
+};
+
 namespace Cryptography
 {
 	// GLOBAL:
@@ -503,7 +514,7 @@ namespace Cryptography
 				// length: length of data
 				// pad_size: pad_size
 				// Pads the data from left to right. no need to remove padding, just remove the first zero digits
-				uint8_t *pad(uint8_t *data, uint16_t &length);
+				char *pad(char *data, std::unsigned_integral auto &length);
 	};
 
 	// Decryption
@@ -556,7 +567,7 @@ namespace Cryptography
 			// data: decrypted padded data
 			// length: length of padded data
 			// return: pad size
-			uint8_t unpad(uint8_t *&data, uint16_t &length);
+			int8_t unpad(char *&data, std::unsigned_integral auto &length);
 	};
 
 
@@ -613,8 +624,8 @@ namespace Cryptography
 		// pt: plaintext
 		// pt_len: plaintext length
 		// mac_code: Message Authentecation Code unallocated buffer
-		inline void generator_init(auto hmacf, uint8_t *pt, uint16_t pt_len);
-		inline bool verifier_init(auto hmacf, uint8_t *pt, uint16_t len);
+		inline void generator_init(auto hmacf, uint8_t *pt, uint64_t pt_len);
+		inline bool verifier_init(auto hmacf, uint8_t *pt, uint64_t len);
 
 		public:
 				Hmac(ProtocolData &protocol, uint8_t *key);
@@ -625,9 +636,9 @@ namespace Cryptography
 				inline bool is_verified();
 
 				// generate the HMAC code
-				void generate(uint8_t *pt, uint16_t len);
+				void generate(uint8_t *pt, uint64_t len);
 
-				bool verify(uint8_t *pt, uint16_t len);
+				bool verify(uint8_t *pt, uint64_t len);
 	};
 
 	// TODO: find a way to secure communication protocol by secritizing some aspects of it
