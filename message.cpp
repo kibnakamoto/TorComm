@@ -436,23 +436,21 @@ constexpr uint8_t *Cryptography::Cipher::to_uint8_ptr(auto data)
 	}
 }
 
-// reminder: length of data is the length of plaintext data to send. Data packet. Not the whole data
-
 // data: plaintext bytearray. Must be allocated using new uint8_t[length]
 // length: length of data
 // pad_size: pad_size
 // Pads the data from left to right. no need to remove padding, just remove the first zero digits
-uint8_t *Cryptography::Cipher::pad(uint8_t *data, uint16_t &length)
+char *Cryptography::Cipher::pad(char *data, std::unsigned_integral auto &length)
 {
-    uint8_t *dat;
-	uint8_t pad_size;
-    uint16_t original_length = length;
-	uint16_t mod = length % protocol.block_size;
+    char *dat;
+	char pad_size;
+    decltype(length) original_length = length;
+	uint8_t mod = length % protocol.block_size;
     pad_size = protocol.block_size - mod;
 	if(mod == 0) // if 32-byte unpadded, then pad_size=0, if zero, than dat[length-1] = pad_size would modify the plaintext
 		pad_size += protocol.block_size;
     length += pad_size;
-    dat = new uint8_t[length];
+    dat = new char[length];
     // memcpy(&dat[pad_size], data, original_length); // for left to right padding
     memcpy(dat, data, original_length);				  // for right to left padding (append to end of message)
 	dat[length-1] = pad_size; // last digit of data is length
@@ -554,13 +552,13 @@ void Cryptography::Decipher::set_key(auto cipher)
 // data: decrypted padded data
 // length: length of padded data
 // return: pad size
-uint8_t Cryptography::Decipher::unpad(uint8_t *&data, uint16_t &length)
+int8_t Cryptography::Decipher::unpad(char *&data, std::unsigned_integral auto &length)
 {
-	uint8_t pad_size = data[0];
+	int8_t pad_size = data[0];
 	length -= pad_size;
 
 	// realloc
-	uint8_t *new_data = new uint8_t[length];
+	char *new_data = new char[length];
 	memcpy(new_data, &data[pad_size], length);
 	delete[] data;
 	data = new_data;
@@ -665,7 +663,7 @@ CryptoPP::ECDSA<CryptoPP::ECP, HashAlg> Cryptography::Ecdsa::get_decompressed(ui
 // hmacf: hmac function
 // pt: plaintext
 // pt_len: plaintext length
-void Cryptography::Hmac::generator_init(auto hmacf, uint8_t *pt, uint16_t pt_len)
+void Cryptography::Hmac::generator_init(auto hmacf, uint8_t *pt, uint64_t pt_len)
 {
 	CryptoPP::StringSource initilizer(pt, pt_len, true, 
 	    new CryptoPP::HashFilter(hmacf,
@@ -675,11 +673,11 @@ void Cryptography::Hmac::generator_init(auto hmacf, uint8_t *pt, uint16_t pt_len
 }
 
 // mac member has to be initialized before calling
-bool Cryptography::Hmac::verifier_init(auto hmacf, uint8_t *pt, uint16_t len)
+bool Cryptography::Hmac::verifier_init(auto hmacf, uint8_t *pt, uint64_t len)
 {
 	bool verify = false;
     const int flags = CryptoPP::HashVerificationFilter::PUT_RESULT | CryptoPP::HashVerificationFilter::HASH_AT_END;
-	uint16_t data_len = len+protocol.mac_size;
+	uint64_t data_len = len+protocol.mac_size;
 	uint8_t *data = new uint8_t[data_len];
 
 	// copy pt + mac to data
@@ -718,7 +716,7 @@ bool Cryptography::Hmac::is_verified()
 }
 
 // generate the HMAC code
-void Cryptography::Hmac::generate(uint8_t *pt, uint16_t len)
+void Cryptography::Hmac::generate(uint8_t *pt, uint64_t len)
 {
 	if(protocol.hash == SHA256) {
 		CryptoPP::HMAC<CryptoPP::SHA256> hmac(key, protocol.key_size);
@@ -736,7 +734,7 @@ void Cryptography::Hmac::generate(uint8_t *pt, uint16_t len)
 }
 
 // verify the HMAC code
-bool Cryptography::Hmac::verify(uint8_t *pt, uint16_t len)
+bool Cryptography::Hmac::verify(uint8_t *pt, uint64_t len)
 {
 	if(protocol.hash == SHA256) {
 		CryptoPP::HMAC<CryptoPP::SHA256> hmac(key, protocol.key_size);
