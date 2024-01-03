@@ -287,7 +287,7 @@ void Cryptography::Key::integer_to_bytes(CryptoPP::Integer num, uint8_t *&bytes,
 	num.Encode((uint8_t*)&bytes[0], bytes_len, CryptoPP::Integer::UNSIGNED);
 }
 
-CryptoPP::Integer Cryptography::Key::bytes_to_integer(uint8_t *&bytes, uint16_t &bytes_len)
+CryptoPP::Integer Cryptography::Key::bytes_to_integer(uint8_t *bytes, uint16_t &bytes_len)
 {
 	CryptoPP::Integer x;
 	x.Decode(bytes, bytes_len);
@@ -552,13 +552,13 @@ void Cryptography::Decipher::set_key(auto cipher)
 // data: decrypted padded data
 // length: length of padded data
 // return: pad size
-int8_t Cryptography::Decipher::unpad(char *&data, std::unsigned_integral auto &length)
+uint8_t Cryptography::Decipher::unpad(uint8_t *&data, std::unsigned_integral auto &length)
 {
-	int8_t pad_size = data[0];
+	uint8_t pad_size = data[0];
 	length -= pad_size;
 
 	// realloc
-	char *new_data = new char[length];
+	uint8_t *new_data = new uint8_t[length];
 	memcpy(new_data, &data[pad_size], length);
 	delete[] data;
 	data = new_data;
