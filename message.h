@@ -133,6 +133,7 @@ namespace Cryptography
 		SECP521R1=LAST*2,
 		BRAINPOOL256R1=LAST*3,
 		BRAINPOOL512R1=LAST*4,
+		LAST_CURVE=LAST*5 // not a value
 	};
 
 	inline uint8_t get_curve_size(Curves curve)
@@ -418,7 +419,7 @@ namespace Cryptography
 
 				static CryptoPP::Integer bytes_to_integer(uint8_t *bytes, uint16_t &bytes_len);
 
-				inline static CryptoPP::ECPPoint reconstruct_point_from_bytes(uint8_t *public_key_x,
+				static CryptoPP::ECPPoint reconstruct_point_from_bytes(uint8_t *public_key_x,
 																			  uint16_t public_key_x_len,
 																			  uint8_t *public_key_y,
 																			  uint16_t public_key_y_len);
@@ -433,7 +434,7 @@ namespace Cryptography
 						 CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k);
 
 				// Hash based key deravation function
-				void hkdf(uint8_t *salt, uint16_t salt_len);
+				void hkdf(uint8_t * password, uint16_t password_len, uint8_t *salt, uint16_t salt_len, uint8_t *info, uint16_t info_len);
 	};
 
 	namespace /* INTERNAL NAMESPACE */

@@ -37,20 +37,19 @@
    					   Possibly debugged, needs further checking - Dec 7, 2023
    					   Check finished - Dec 9, 2023
  * hmac/iv with recv_full and send full, this would only apply to data that can fit in the ram available. Otherwise, apply the large data solution defined in the previous todo - Dec 2, 2023
+ * while receving and sending fully, make sure that large files are treated properly, don't read the whole data into a byte array but rather read as partitions into an array. This is for really large files where the ram isn't enough - Dec 30, 2023
+ * define key exchanging for 2 peer communication  - Jan 3, 2024
  */
 
 /* FUTURE TODOS: (Not for version 1.0)
  *
- * TODO: hmac/iv for when there are multiple indivisual encrypted packets - Dec 2, 2023
  * TODO: add ecdsa support on send/recv and protocol data sizes
  * TODO: Optimize the iv and other pointer allocations only once and take them as a function parameter for more efficiency.
  */
 
 /* NOT DONE:
- * TODO: while receving and sending fully, make sure that large files are treated properly, don't read the whole data into a byte array but rather read as partitions into an array. This is for really large files where the ram isn't enough - SEND DONE - Dec 30, 2023
- * TODO: define key exchanging for 2 peer communication 
  * TODO: define key exchanging for multi peer communication 
- *
+ * TODO: When sending the protocol no in P2P::send_two_party_ecdh(), make sure to encrypt the protocol number. the padding can be completely random values (15-bytes). The first byte will be the protocol number. This will make the protocol number private so no one will know it. use the default security protocol ALWAYS for this operation. Make sure to verify with HMAC
  */
 
 /* MAJOR:

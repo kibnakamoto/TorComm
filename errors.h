@@ -32,6 +32,7 @@ enum ERRORS
 	HASHING_ALGORITHM_NOT_FOUND,
 	ENCRYPTION_ALGORITHM_NOT_FOUND,
 	VERIFICATION_ALGORITHM_NOT_FOUND,
+	NO_PROTOCOL,
 };
 
 // error names as string
@@ -44,10 +45,12 @@ const constexpr static char* ERROR_STRING[]
 	"HASHING_ALGORITHM_NOT_FOUND",
 	"ENCRYPTION_ALGORITHM_NOT_FOUND",
 	"VERIFICATION_ALGORITHM_NOT_FOUND",
+	"NO_PROTOCOL",
 };
 
 // if USE_DEFAULT_VALUES, when an algorithm is not found, it will use a predefined one
 #define USE_DEFAULT_VALUES false
+#define DEBUG_MODE true // debug mode will allow throwing errors rather than assigning them
 #define ERRORS_LOG_FILE "log/errors.log"
 #define NETWORK_LOG_FILE "log/network.log"
 inline bool log_network_issues = true; // changable

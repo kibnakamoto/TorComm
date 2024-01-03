@@ -3,6 +3,7 @@
 #include <jsoncpp/json/json.h>
 #include <ctime>
 #include <chrono>
+#include <stdexcept>
 #include <string>
 #include <variant>
 
@@ -35,7 +36,6 @@ Cryptography::ProtocolData::ProtocolData(uint8_t protocol_no)
 
 void Cryptography::ProtocolData::init(uint8_t protocol_no)
 {
-	
 	// seperate protocol and curve
 	protocol = (CommunicationProtocol)(protocol_no - protocol_no % LAST);
 	curve = (Curves)(protocol_no % LAST);
@@ -47,6 +47,9 @@ void Cryptography::ProtocolData::init(uint8_t protocol_no)
 	} if(communication_protocols[protocol].find("HMAC") != std::string::npos) {
 		verifier = HMAC;
 	} else {
+		#if DEBUG_MODE
+			throw std::runtime_error("ProtocolData::init: VERIFICATION_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
+		#endif
 		error = VERIFICATION_ALGORITHM_NOT_FOUND;
 
 		// default value
@@ -167,6 +170,9 @@ std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption, // aes cbc mode
 		case CHACHA20:
 			return CryptoPP::ChaCha::Encryption();
 		default:
+			#if DEBUG_MODE
+				throw std::runtime_error("ProtocolData::get_decipher: ENCRYPTION_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
+			#endif
 			error = ENCRYPTION_ALGORITHM_NOT_FOUND;
 
 			// default value
@@ -194,6 +200,9 @@ std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
 		case CHACHA20:
 			return CryptoPP::ChaCha::Encryption();
 		default:
+			#if DEBUG_MODE
+				throw std::runtime_error("ProtocolData::get_cipher: ENCRYPTION_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
+			#endif
 			error = ENCRYPTION_ALGORITHM_NOT_FOUND;
 
 			// default value
@@ -210,6 +219,10 @@ std::variant<CryptoPP::SHA256, CryptoPP::SHA512> Cryptography::ProtocolData::get
 		case SHA512:
 			return CryptoPP::SHA512();
 		default:
+			#if DEBUG_MODE
+				throw std::runtime_error("ProtocolData::get_hash: HASHING_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
+			#endif
+			error = HASHING_ALGORITHM_NOT_FOUND;
 			return default_hash();
 	}
 }
@@ -254,6 +267,9 @@ Cryptography::Key::Key(ProtocolData &protocol) : protocol(protocol)
 			group.Initialize(CryptoPP::ASN1::brainpoolP512r1());
 			break;
 		default:
+			#if DEBUG_MODE
+				throw std::runtime_error("ProtocolData::get_hash: ELLIPTIC_CURVE_NOT_FOUND error. The protocol number is not valid");
+			#endif
 			error = ELLIPTIC_CURVE_NOT_FOUND;
 
 			// error handling
@@ -294,7 +310,7 @@ CryptoPP::Integer Cryptography::Key::bytes_to_integer(uint8_t *bytes, uint16_t &
 	return x;
 }
 
-CryptoPP::ECPPoint Cryptography::Key::reconstruct_point_from_bytes(uint8_t *public_key_x,
+inline CryptoPP::ECPPoint Cryptography::Key::reconstruct_point_from_bytes(uint8_t *public_key_x,
 															  					 uint16_t public_key_x_len,
 															  					 uint8_t *public_key_y,
 															  					 uint16_t public_key_y_len)
@@ -319,15 +335,24 @@ Cryptography::Key::multiply(CryptoPP::Integer priv_key,
 }
 
 // Hash based key deravation function
-void Cryptography::Key::hkdf(uint8_t *salt, uint16_t salt_len)
-{
+// password: ECDH Shared Secret
+// password_len: length of password
+// salt: optional salt
+// salt_len: length of salt
+// info: optional info
+// info_len: length of info
+void Cryptography::Key::hkdf(uint8_t *password, uint16_t password_len, uint8_t *salt, uint16_t salt_len, uint8_t *info, uint16_t info_len)
+{ //////////////// TODO: hkdf should be using the output from mlutiplication here.
 	if(protocol.hash == SHA256) {
 		CryptoPP::HKDF<CryptoPP::SHA256> hkdf;
-	    hkdf.DeriveKey(key, protocol.key_size, (const uint8_t*)"", 0, salt, salt_len, NULL, 0);
+	    hkdf.DeriveKey(key, protocol.key_size, password, password_len, salt, salt_len, info, info_len);
 	} else if (protocol.hash == SHA512) {
 		CryptoPP::HKDF<CryptoPP::SHA512> hkdf;
-	    hkdf.DeriveKey(key, protocol.key_size, (const uint8_t*)"", 0, salt, salt_len, NULL, 0);
+	    hkdf.DeriveKey(key, protocol.key_size, password, password_len, salt, salt_len, info, info_len);
 	} else {
+		#if DEBUG_MODE
+			throw std::runtime_error("Key::hkdf: HASHING_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
+		#endif
 		error = HASHING_ALGORITHM_NOT_FOUND;
 
 		// default value
@@ -592,6 +617,9 @@ void Cryptography::Ecdsa::sign(uint8_t *msg, uint16_t msg_len)
 		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::Signer signer;
 		signer_init(signer, msg, msg_len);
 	} else {
+		#if DEBUG_MODE
+			throw std::runtime_error("Ecdsa::sign: HASHING_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
+		#endif
 		error = HASHING_ALGORITHM_NOT_FOUND;
 
 		// give it the default value
@@ -621,6 +649,9 @@ bool Cryptography::Ecdsa::verify(uint8_t *msg, uint16_t msg_len, uint8_t *&signa
 		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::Verifier verifier(public_k);
 		verified = verifier.VerifyMessage(&msg[0], msg_len, &signature[0], signature_len); // ecdsa message verification
 	} else {
+		#if DEBUG_MODE
+			throw std::runtime_error("Ecdsa::verify: HASHING_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
+		#endif
 		error = HASHING_ALGORITHM_NOT_FOUND;
 
 		// default hash value
@@ -725,6 +756,9 @@ void Cryptography::Hmac::generate(uint8_t *pt, uint64_t len)
 		CryptoPP::HMAC<CryptoPP::SHA512> hmac(key, protocol.key_size);
 		generator_init(hmac, pt, len);
 	} else {
+		#if DEBUG_MODE
+			throw std::runtime_error("Hmac::generate: HASHING_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
+		#endif
 		error = HASHING_ALGORITHM_NOT_FOUND;
 
 		// default values
@@ -743,6 +777,9 @@ bool Cryptography::Hmac::verify(uint8_t *pt, uint64_t len)
 		CryptoPP::HMAC<CryptoPP::SHA512> hmac(key, protocol.key_size);
 		verified = verifier_init(hmac, pt, len);
 	} else {
+		#if DEBUG_MODE
+			throw std::runtime_error("Hmac::verify: HASHING_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
+		#endif
 		error = HASHING_ALGORITHM_NOT_FOUND;
 
 		// default values
