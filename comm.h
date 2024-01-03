@@ -20,6 +20,7 @@
 #define COMM_H
 
 #include <cryptopp/strciphr.h>
+#include <stdexcept>
 #include <stdint.h>
 #include <string>
 #include <concepts>
@@ -236,7 +237,7 @@ class P2P
 		}
 
 		// after calling connect
-		// ip: ip address of the person receiving
+		// send_to: person receiving
 		// return: if the other person exists after called find_to_recv with their ip address.
 		bool send_two_party_ecdh(boost::asio::ip::tcp::socket send_to, Cryptography::ProtocolData protocol,
 								 Cryptography::Key &key)
@@ -264,14 +265,70 @@ class P2P
 				return 0;
 
 			length--;
-			recv(*recv_from, &packet[0], length); // reuse packet
+
+			if(!(*recv_from).available()) // check if the sender is available
+				return 0;
+			recv(*recv_from, &packet[0], length); // reuse packet, receive their public key
 
 			// use their keys
-			CryptoPP::Integer x_bob = key.bytes_to_integer(packet, xy_len);
-			CryptoPP::Integer y_bob = key.bytes_to_integer(&packet[xy_len], xy_len);
-
-
+			CryptoPP::ECPPoint public_bob = key.reconstruct_point_from_bytes(packet, xy_len, &packet[xy_len], xy_len);
+			auto shared_secret = key.multiply(public_bob);
+			uint16_t shared_secret_len = shared_secret.x.MinEncodedSize();
+			shared_secret.x.Encode(&packet[0], shared_secret_len, CryptoPP::Integer::UNSIGNED); // add the data to an array (used packet since it's already allocated)
+			key.hkdf(packet, shared_secret_len, (uint8_t*)"", 0, (uint8_t*)"", 0);
 			delete[] packet;
+			return 1;
+		}
+
+		// after calling accept
+		// recv_from: the sending node
+		// errors: CAN ONLY BE NO_PROTOCOL. CHECK IF NO_PROTOCOL
+		// return: if the other person exists after called find_to_recv with their ip address.
+		bool recv_two_party_ecdh(boost::asio::ip::tcp::socket recv_from, Cryptography::ProtocolData protocol,
+								 Cryptography::Key &key, ERRORS &error)
+		{
+			// no compression
+			uint16_t xy_len = Cryptography::get_curve_size(protocol.curve);
+			uint16_t length = 1U + (xy_len<<1); // 1-byte protocol + public key
+			uint8_t *packet = new uint8_t[length];
+			
+			// receive their keys
+			if(!recv_from.available())
+				return 0;
+
+			recv(recv_from, &packet[0], length); // reuse packet
+
+			// check if protocol number exists
+			if(packet[0] >= Cryptography::LAST_CURVE) {
+				#if DEBUG_MODE
+					throw std::runtime_error("P2P::recv_two_party_ecdh: NO_PROTOCOL error. the protocol given by the sender is not valid.");
+				#endif
+				error = NO_PROTOCOL; // no protocol found. Cannot establish secure public channel
+				// when calling function: make sure to check if error == NO_PROTOCOL
+				return 1;
+			}
+
+			protocol.init(packet[0]); // re-initialize protocol
+			CryptoPP::ECPPoint public_alice = key.reconstruct_point_from_bytes(&packet[1], xy_len, &packet[xy_len+1], xy_len);
+
+			// save public key to packet
+			key.public_key.x.Encode(&packet[0], xy_len, CryptoPP::Integer::UNSIGNED);
+			key.public_key.y.Encode(&packet[xy_len], xy_len, CryptoPP::Integer::UNSIGNED);
+
+			// Alice sends public key
+			boost::asio::ip::tcp::socket *send_to = find_to_send(recv_from.local_endpoint().address().to_string());
+			if(!send_to)
+				return 0;
+			length--;
+			send(*send_to, packet, length);
+
+			// produce a shared-secret
+			auto shared_secret = key.multiply(public_alice);
+			uint16_t shared_secret_len = shared_secret.x.MinEncodedSize();
+			shared_secret.x.Encode(&packet[0], shared_secret_len, CryptoPP::Integer::UNSIGNED); // add the data to an array (used packet since it's already allocated)
+			key.hkdf(packet, shared_secret_len, (uint8_t*)"", 0, (uint8_t*)"", 0);
+			delete[] packet;
+			
 			return 1;
 		}
 
