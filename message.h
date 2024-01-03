@@ -53,17 +53,6 @@
 // get current time
 std::string get_time();
 
-
-// For pad function
-template<typename T>
-concept PadType = requires(T t)
-{
-	{
-		(std::same_as<T, char> || 
-		 std::same_as<T, uint8_t>)
-	};
-};
-
 namespace Cryptography
 {
 	// GLOBAL:
@@ -84,7 +73,7 @@ namespace Cryptography
 		ECIES_ECDSA_AES128_GCM_SHA256,
 		ECIES_ECDSA_AES128_GCM_SHA512,
 
-		// use HMAC for verification (preferred)
+		// use HMAC for verification (Only supporting HMAC in Version 1.0)
 		ECIES_HMAC_AES256_CBC_SHA256,
 		ECIES_HMAC_AES256_CBC_SHA512,
 		ECIES_HMAC_AES192_CBC_SHA256,
@@ -145,6 +134,23 @@ namespace Cryptography
 		BRAINPOOL256R1=LAST*3,
 		BRAINPOOL512R1=LAST*4,
 	};
+
+	inline uint8_t get_curve_size(Curves curve)
+	{
+		switch(curve) {
+			case SECP256K1:
+			case SECP256R1:
+			case BRAINPOOL256R1:
+				return 32;
+			case BRAINPOOL512R1:
+				return 64;
+			case SECP521R1:
+				return 66;
+			default:
+				return 0;
+		}
+	}
+
 
 	enum CipherAlgorithm {
 		AES256,
@@ -410,7 +416,7 @@ namespace Cryptography
 				// convert public key to uint8_t*
 				static void integer_to_bytes(CryptoPP::Integer num, uint8_t *&bytes, uint16_t &bytes_len);
 
-				static CryptoPP::Integer bytes_to_integer(uint8_t *&bytes, uint16_t &bytes_len);
+				static CryptoPP::Integer bytes_to_integer(uint8_t *bytes, uint16_t &bytes_len);
 
 				inline static CryptoPP::ECPPoint reconstruct_point_from_bytes(uint8_t *public_key_x,
 																			  uint16_t public_key_x_len,
@@ -567,7 +573,7 @@ namespace Cryptography
 			// data: decrypted padded data
 			// length: length of padded data
 			// return: pad size
-			int8_t unpad(char *&data, std::unsigned_integral auto &length);
+			uint8_t unpad(uint8_t *&data, std::unsigned_integral auto &length);
 	};
 
 

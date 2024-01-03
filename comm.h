@@ -19,6 +19,7 @@
 #ifndef COMM_H
 #define COMM_H
 
+#include <cryptopp/strciphr.h>
 #include <stdint.h>
 #include <string>
 #include <concepts>
@@ -77,25 +78,16 @@ concept Boost_Buffer_Type = requires(T t)
 static void get_info(uint8_t *dat, uint64_t &len, uint8_t &type);
 
 
-// ONCE RECEIVED
-// Once data is received, then, you have to remove padding, the thought is that the padding will be subtracted from the length of the message, the length is the first 8 bytes of data that is encrypted
-
-// no information is sent publicly, including the protocol used. the protocol used will be established using a puzzle. The puzzle is, considering that both parties (or more) know the secure key, adding the protocol number to the ecdsa signature then send it. Once received, the recipent has to try all possible protocols to come up with the right protocol.
-// for the recipent to know which is the correct protocol:
-// 	1. first sent network packet in a new communication requires:
-// 		* a random byte array that is encrypted is appended to the end of ciphertext/signature (with a public IV). Because the secret key used is known by the required parties, they can try all ciphers and once it gets a match, it will continue using that protocol. It is kind of a brute force method, but no one else can figure out either the key or the protocol used.
-
-/* This is AFTER PARSING the received message
- * Purpose of this class:
- * Creating images, files, GIFs, and videos as files after receiving.
- * Compressing data when saving to sessions/session-id/messages.json.
- * assigning a timestamp to when the message was received
- */ 
+/* ECDH
+ * When establishing a new secure public channel, only send ecdh data such as public key to the other person
+ * and the curve used. Don't send the whole protocol until it's encrypted.
+ */
 
 enum DATA_FORMAT {
 	TEXT    = 1024,  // 0x0400   - Default text buffer size, while using, it can be different
 	_FILE_  = 2048,  // 00x640   - All types of files
-	DELETE  = 32,    // 0x0010   - send which data to delete, 32 because it will shifted by 5
+	DELETE  = 32,    // 0x0010   - Send which data to delete, 32 because it will shifted by 5
+	ECDH_DATA = 512, // 0x0200   - Public key, symmetrical key size, and elliptic curve
 };
 
 
@@ -105,24 +97,6 @@ enum DATA_FORMAT {
 // type: type of message (TEXT, IMAGE, etc)
 // return: length of dat
 static uint8_t set_info(uint8_t *dat, uint64_t len, uint8_t type);
-
-// PROTOTYPIC:
-// Message structure for the first packet in communciation, First 4 bytes of message is message length, the rest is message, this is only on first message block
-// 4 byte msg_len
-// 1020 byte default packet size
-// template<typename T>
-// struct GenesisPacket
-// {
-// 	uint64_t msg_len;
-// 	uint8_t msg_type;
-// 	T msg;
-// };
-// 
-// template<typename T>
-// struct Packet
-// {
-// 	T msg;
-// };
 
 // blocked ips
 class Blocked
@@ -250,7 +224,7 @@ class P2P
 		{
 			auto &socket = servers.emplace_back(io_context); // start socket
 			boost::asio::async_connect(socket, endpoints, [this](boost::system::error_code ec, boost::asio::ip::tcp::endpoint) {
-				if (ec) {
+				if(ec) {
 					servers.pop_back(); // remove last element because there is an error
 					if(log_network_issues) {
 						std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
@@ -259,6 +233,46 @@ class P2P
 					}
 				}
 			});
+		}
+
+		// after calling connect
+		// ip: ip address of the person receiving
+		// return: if the other person exists after called find_to_recv with their ip address.
+		bool send_two_party_ecdh(boost::asio::ip::tcp::socket send_to, Cryptography::ProtocolData protocol,
+								 Cryptography::Key &key)
+		{
+			// no compression
+			uint16_t xy_len = Cryptography::get_curve_size(protocol.curve);
+			uint16_t length = 1U + (xy_len<<1); // 1-byte protocol + public key
+
+			// send genesis so that the reciever knows what to get
+			send_genesis(length, (uint16_t)DATA_FORMAT::ECDH_DATA>>5);
+
+			uint8_t *packet = new uint8_t[length];
+			packet[0] = (uint8_t)protocol.curve + (uint8_t)protocol.protocol; // Send the whole protocol publicly
+
+			// save public key to packet
+			key.public_key.x.Encode(&packet[1], xy_len, CryptoPP::Integer::UNSIGNED);
+			key.public_key.y.Encode(&packet[1+xy_len], xy_len, CryptoPP::Integer::UNSIGNED);
+
+			// send keys
+			send(send_to, packet, length);
+
+			// receive their keys
+			boost::asio::ip::tcp::socket *recv_from = find_to_recv(send_to.local_endpoint().address().to_string());
+			if(!recv_from)
+				return 0;
+
+			length--;
+			recv(*recv_from, &packet[0], length); // reuse packet
+
+			// use their keys
+			CryptoPP::Integer x_bob = key.bytes_to_integer(packet, xy_len);
+			CryptoPP::Integer y_bob = key.bytes_to_integer(&packet[xy_len], xy_len);
+
+
+			delete[] packet;
+			return 1;
 		}
 
 		// start the assynchronous connections. All connections are queued up until now
@@ -347,7 +361,7 @@ class P2P
 			return _recv(boost::asio::buffer(data, packet_size));
 		}
 
-		// same as function above + receiver: find_to_send(address)
+		// same as function above + receiver: find_to_recv(address)
 		void recv(boost::asio::ip::tcp::socket &receiver, uint8_t *data, std::unsigned_integral auto &packet_size)
 		{
 			_recv(receiver, boost::asio::buffer(data, packet_size));
@@ -358,7 +372,7 @@ class P2P
 			return _recv(boost::asio::buffer(data));
 		}
 
-		// same as function above + receiver: find_to_send(address)
+		// same as function above + receiver: find_to_recv(address)
 		void recv(boost::asio::ip::tcp::socket &receiver, std::string data)
 		{
 			_recv(receiver, boost::asio::buffer(data));
@@ -676,7 +690,7 @@ class P2P
 					cipher.encrypt(got_cipher, data, data_len, &packet[security_len], cipher_len, 1);
 
 					// generate HMAC
-					verifier.generate(data, data_len);
+					verifier.generate(reinterpret_cast<uint8_t*>(data), data_len);
 
 					// copy mac and iv
 					memcpy(packet, verifier.get_mac(), protocol.mac_size);
@@ -716,7 +730,7 @@ class P2P
 						cipher.encrypt(got_cipher, data, s_size, &packet[security_len], cipher_len, 1);
 	
 						// generate HMAC
-						verifier.generate(data, s_size);
+						verifier.generate(reinterpret_cast<uint8_t*>(data), s_size);
 
 						// copy mac and iv
 						memcpy(packet, verifier.get_mac(), protocol.mac_size);
@@ -755,7 +769,7 @@ class P2P
 			cipher.encrypt(got_cipher, reinterpret_cast<uint8_t*>(&dat[0]), length, &data[security_len], len, 1);
 
 			// generate HMAC
-			verifier.generate(&dat[0], length);
+			verifier.generate(reinterpret_cast<uint8_t*>(data), length);
 
 			// copy mac and iv
 			memcpy(data, verifier.mac, protocol.mac_size);
@@ -884,24 +898,26 @@ class P2P
 			delete[] dat;
 		}
 
-		boost::asio::ip::tcp::socket &find_to_send(std::string ip)
+		boost::asio::ip::tcp::socket *find_to_send(std::string ip)
 		{
 			for(auto &client : clients) {
 				std::string address = client.remote_endpoint().address().to_string();
 				if(ip == address) {
-					return client;
+					return &client;
 				}
 			}
+			return nullptr;
 		}
 
-		boost::asio::ip::tcp::socket &find_to_recv(std::string ip)
+		boost::asio::ip::tcp::socket *find_to_recv(std::string ip)
 		{
 			for(auto &server : servers) {
 				std::string address = server.remote_endpoint().address().to_string();
 				if(ip == address) {
-					return server;
+					return &server;
 				}
 			}
+			return nullptr;
 		}
 
 		private:
