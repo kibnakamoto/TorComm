@@ -5,7 +5,6 @@ OBJS = padding.o
 
 all: ${OBJS}
 	${CXX} ${CXXFLAGS} ${OBJS} -o ${EXEC} ${FLAGS}
-	rm -rf ${OBJS}
 	
 %.o: %.cpp
 	${CXX} ${CXXFLAGS} $< -c ${FLAGS}

@@ -9,9 +9,7 @@ EXEC = file
 OBJS = file.o ../../comm.o ../../message.o ../../keys.o ../../settings.o 
 
 all: ${OBJS}
-	${MAKE} -C ../../ debug
 	${CXX} ${CXXFLAGS}  ${OBJS} -o ${EXEC} ${FLAGS}
-	rm -rf *.o
 	
 %.o: %.cpp
 	${CXX} ${CXXFLAGS} $< -c ${FLAGS}

@@ -39,6 +39,8 @@ test/file/file
 test/file/file.o
 test/misc/pad
 test/misc/padding.o
+test/crypto/crypto
+test/crypto/crypto.o
 security/get_keys
 security/keys
 

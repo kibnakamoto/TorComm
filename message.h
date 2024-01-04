@@ -352,9 +352,6 @@ namespace Cryptography
 			uint16_t key_size;
 			uint16_t mac_size;
 			uint16_t ct_size; // size of ciphertext block size
-			
-			// for efficient custom error checking
-			ERRORS error_code = NO_ERROR;
 
 			// block size of cipher. plaintext has to be a multiple of block_size (padded)
 			uint16_t block_size;
@@ -448,7 +445,7 @@ namespace Cryptography
 																			  uint16_t public_key_y_len);
 
 				// bob's public key is multiplied with alice's to generate the ECDH key.
-				inline CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element
+				CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element
 				multiply(CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k);
 
 				// bob's public key is multiplied with alice's to generate the ECDH key.

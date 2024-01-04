@@ -58,7 +58,7 @@ inline bool log_network_issues = true; // changable
 class ErrorHandling
 {
 	public:
-		ERRORS error;
+		ERRORS error = NO_ERROR;
 		ErrorHandling() = default;
 
 		// lambda function is for what to do in case of error
@@ -79,7 +79,7 @@ class ErrorHandling
 		// CIPHER
 		// find error and raise it after adding to a log file
 		std::function<void(ERRORS, std::string)> encryption_unexpected_error=[](ERRORS error_code, std::string time) {
-			std::ofstream file(ERRORS_LOG_FILE, std::fstream::in | std::fstream::out | std::fstream::app);
+			std::ofstream file(ERRORS_LOG_FILE, std::fstream::app);
 			file << "\nENCRYPTION UNEXPECTED ERROR (in Cryptography::ProtocolData::init_cipher_data) = TIME: "
 				 << time << "\tERROR_CODE: " << error_code << "\tERROR_ID: " << ERROR_STRING[error_code];
 			file.close();
@@ -90,7 +90,7 @@ class ErrorHandling
 		// VERIFICATION
 		// find error and raise it after adding to a log file
 		std::function<void(ERRORS, std::string)> verification_unexpected_error=[](ERRORS error_code, std::string time) {
-			std::ofstream file(ERRORS_LOG_FILE, std::fstream::in | std::fstream::out | std::fstream::app);
+			std::ofstream file(ERRORS_LOG_FILE, std::fstream::app);
 			file << "\nVERIFICATION ALGORITHM ERROR (in Cryptography::ProtocolData::init) = TIME: "
 				 << time << "\tERROR_CODE: " << error_code << "\tERROR_ID: " << ERROR_STRING[error_code];
 			file.close();
@@ -101,7 +101,7 @@ class ErrorHandling
 		// ELLIPTIC CURVE
 		// find error and raise it after adding to a log file
 		std::function<void(ERRORS, std::string)> curve_unexpected_error=[](ERRORS error_code, std::string time) {
-			std::ofstream file(ERRORS_LOG_FILE, std::fstream::in | std::fstream::out | std::fstream::app);
+			std::ofstream file(ERRORS_LOG_FILE, std::fstream::app);
 			file << "\nELLIPTIC CURVE UNEXPECTED ERROR (in Cryptography::ProtocolData::init_cipher_data) = TIME: "
 				 << time << "\tERROR_CODE: " << error_code << "\tERROR_ID: " << ERROR_STRING[error_code];
 			file.close();
@@ -112,7 +112,7 @@ class ErrorHandling
 		// HASHING
 		// find error and raise it after adding to a log file
 		std::function<void(ERRORS, std::string)> hashing_unexpected_error=[](ERRORS error_code, std::string time) {
-			std::ofstream file(ERRORS_LOG_FILE, std::fstream::in | std::fstream::out | std::fstream::app);
+			std::ofstream file(ERRORS_LOG_FILE, std::fstream::app);
 			file << "\nHASHING UNEXPECTED ERROR (in Cryptography::ProtocolData::init_hash_data) = TIME: "
 				 << time << "\tERROR_CODE: " << error_code << "\tERROR_ID: " << ERROR_STRING[error_code];
 			file.close();
