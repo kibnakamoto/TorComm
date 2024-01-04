@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string>
 #include <chrono>
+#include <filesystem>
 
 #include "../../message.h"
 
@@ -42,33 +43,46 @@ std::string get_data(std::string name)
 
 int main()
 {
+	std::cout << std::endl << "-------------- START FILE TEST --------------";
 	std::string n1 = "old.txt";
 	std::string n2 = "new.txt";
+	bool passed = true; // passed everything
 
 	// create_file
-	// create_file(n1, "hello world!"); // length:12
+	create_file(n1, "hello world!"); // length:12
 
 	// text file
 	std::cout << "speed (test_move): " << test_move(n1, n2).count() << "ns\n";
 
 	// check file:
-	// if(get_data(n2) == "hello world!") {
-	// 	std::cout << std::endl << "PASSED - File management (move_file)";
-	// } else {
-	// 	std::cout << std::endl << "FAILED - File management (move_file)";
-	// }
+	if(get_data(n2) == "hello world!") {
+		std::cout << std::endl << "PASSED - File management (move_file)";
+	} else {
+		passed = false;
+		std::cout << std::endl << "FAILED - File management (move_file)";
+	}
 
 	// test image
-	n1 = "image.png";
+	n1 = "image.png"; // whenever testing, copy original.png onto image.png
 	n2 = "new.png";
 
 	// image file
-	std::cout << "speed (test_move): " << test_move(n1, n2).count() << "ns\n";
+	std::cout << "\nspeed (test_move) image: " << test_move(n1, n2).count() << "ns\n";
 
-	// MANUALLY CHECK IF FILE IS CORRECT
+	// check file:
+	if(get_data(n2) == get_data("original.png")) {
+		std::cout << std::endl << "PASSED - Image File management (move_file)";
+	} else {
+		passed = false;
+		std::cout << std::endl << "FAILED - Image File management (move_file)";
+	}
+	// copy image.png back
+	Cryptography::copy_file("original.png", n1);
 
-
-	// std::cout << "speed (test_move): " << test_delete(n2);
-	std::cout << std::endl;
+	// delete file:
+	std::cout << "\nspeed (test_delete): " << test_delete("new.txt").count() << "ns\n";
+	std::cout << "\nspeed (test_delete) image: " << test_delete(n2).count() << "ns\n";
+	std::cout << std::endl << std::endl << "FILE TEST: " << (passed ? "PASSED WHOLE TEST" : "FAILED SOME/ALL");
+	std::cout << std::endl << std::endl << "--------------- END FILE TEST ---------------\n";
 	return 0;
 }
