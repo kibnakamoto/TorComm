@@ -33,7 +33,12 @@
 torcomm
 
 # test files
-test/pad*
+test/block/block
+test/block/blocked.o
+test/file/file
+test/file/file.o
+test/misc/pad
+test/misc/padding.o
 security/get_keys
 security/keys
 
