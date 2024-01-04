@@ -259,15 +259,15 @@ namespace Cryptography
 
 		// read get_keys.o into pointer and set to ones
 		if(std::filesystem::exists(src_file)) {
-			std::fstream file(src_path, std::ios::ate);
+			std::fstream file(src_path, std::ios_base::in | std::ios::binary);
 			file.seekg(0, std::ios::beg);
 			size_t file_size = std::filesystem::file_size(src_path);
 			char *obj = new char[file_size];
 			file.read(obj, file_size);
 
 			// create new file with new data
-			std::fstream dest_file(dest_path, std::ios::out);
-			dest_file << obj;
+			std::fstream dest_file(dest_path, std::ios::out | std::ios::binary);
+			dest_file.write(obj, file_size);
 			dest_file.close();
 
 			memset(obj, 0xff, file_size); // set to ones, not zeros, because zeros might not write, because there might be optimizations around writing zeros.
@@ -275,6 +275,8 @@ namespace Cryptography
 			file.open(src_path, std::fstream::out | std::fstream::trunc);
 			file << (const char*)obj; // set all bits
 			file.close();
+			std::filesystem::remove(src_file); // delete file
+			
 			delete[] obj;
 		}
 	}

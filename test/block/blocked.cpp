@@ -2,13 +2,15 @@
 #include <cassert>
 #include <utility>
 
-#include "../comm.h"
+#include <boost/exception/diagnostic_information.hpp>
 
-// test blocked class
+#include "../../comm.h"
+
+// test Blocked class in comm.h
 
 int main()
 {
-	Blocked blocked("../security/keys", "../blocked");
+	Blocked blocked("../../security/keys", "../../blocked");
 	blocked.block("0000:0000:0000:0000:0000:0000:0000:0000");
 	blocked.block("0000:0000:0000:0000:0000:0000:0000:0001");
 	blocked.block("0000:0000:0000:0000:0000:0000:0000:0002");
@@ -26,6 +28,6 @@ int main()
 	assert(blocked0); // should say it's blocked
 	blocked0 = blocked.is_blocked("0000:0000:0000:0000:0000:0000:0000:0000");
 	assert(!blocked0); // shouldn't be blocked again
-	std::cout << std::endl << "passed" << std::endl;
+	std::cout << std::endl << "PASSED - BLOCKED CLASS" << std::endl;
 	return 0;
 }

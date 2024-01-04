@@ -1,0 +1,17 @@
+CXX = g++
+CXXFLAGS = -std=c++23 -Wall -pedantic -Wextra -O4 -g
+EXEC = pad
+OBJS = padding.o
+
+all: ${OBJS}
+	${CXX} ${CXXFLAGS} ${OBJS} -o ${EXEC} ${FLAGS}
+	rm -rf ${OBJS}
+	
+%.o: %.cpp
+	${CXX} ${CXXFLAGS} $< -c ${FLAGS}
+
+
+.PHONY: clean
+clean:
+	rm -rf ${EXEC} ${OBJS}
+
