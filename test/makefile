@@ -1,24 +1,16 @@
 CXX = g++
 CXXFLAGS = -std=c++23 -Wall -pedantic -Wextra -O4 -g
-CRYPTOPP_FLAGS =   -Iinclude -Llib -lcryptopp -lpthread
-JSON_FLAGS = -ljsoncpp
-CURL_FLAGS = -lcurl
-BOOST_FLAGS = -lboost_filesystem
-FLAGS = ${BOOST_FLAGS} ${CRYPTOPP_FLAGS} ${JSON_FLAGS} ${CURL_FLAGS}
-EXEC = block
-# CPPS = torcomm.cpp keys.cpp settings.cpp
-OBJS = blocked.o ../comm.o ../message.o ../keys.o ../settings.o 
+EXEC = test
+OBJS = block/blocked.o crypto/crypto.o file/file.o misc/padding.o
 
 all: ${OBJS}
 	${MAKE} -C ../ debug
-	${CXX} ${CXXFLAGS}  ${OBJS} -o ${EXEC} ${FLAGS}
-	rm -rf blocked.o
-	
-%.o: %.cpp
-	${CXX} ${CXXFLAGS} $< -c ${FLAGS}
-
+	${MAKE} -C block/
+	${MAKE} -C crypto/
+	${MAKE} -C file/
+	${MAKE} -C misc/
 
 .PHONY: clean
 clean:
-	rm -rf ${EXEC}
+	rm -rf ${EXEC} ${OBJS}
 

@@ -26,9 +26,6 @@
 
 #include <jsoncpp/json/json.h>
 
-
-// TODO: secure messages
-
 Cryptography::ProtocolData::ProtocolData(uint8_t protocol_no)
 {
 	init(protocol_no);
@@ -37,8 +34,12 @@ Cryptography::ProtocolData::ProtocolData(uint8_t protocol_no)
 void Cryptography::ProtocolData::init(uint8_t protocol_no)
 {
 	// seperate protocol and curve
-	protocol = (CommunicationProtocol)(protocol_no - protocol_no % LAST);
-	curve = (Curves)(protocol_no % LAST);
+	protocol = (CommunicationProtocol)(protocol_no % LAST);
+	uint16_t tmp = protocol_no - protocol_no % LAST;
+	if(tmp != 0) {
+		tmp /= LAST;
+	}	
+	curve = (Curves)(tmp);
 	mac_size = default_mac_size;
 
 	// initialize verification algorithm data
@@ -51,25 +52,22 @@ void Cryptography::ProtocolData::init(uint8_t protocol_no)
 			throw std::runtime_error("ProtocolData::init: VERIFICATION_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
 		#endif
 		error = VERIFICATION_ALGORITHM_NOT_FOUND;
-
-		// default value
-		verifier = default_verifier;
 	}
+
 
 	// initialize cipher and decipher object
 	init_cipher_data();
 
-	// if error caused: can only be ENCRYPTION_ALGORITHM_NOT_FOUND
-	if (error != NO_ERROR) {
-		error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND, error_handler_encryption_function_not_found, encryption_unexpected_error, get_time);
-	}
+	// if (error == ENCRYPTION_ALGORITHM_NOT_FOUND) {
+	//	error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND, error_handler_encryption_function_not_found, encryption_unexpected_error, get_time);
+	// }
 
 	curve_oid = get_curve();
 
 	init_hash_data();
-	if (error != NO_ERROR) {
-		error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error, get_time);
-	}
+	// if (error == HASHING_ALGORITHM_NOT_FOUND) {
+	//	error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error, get_time);
+	// }
 }
 
 Cryptography::ProtocolData::ProtocolData(CommunicationProtocol protocol, Curves curve)
@@ -78,10 +76,14 @@ Cryptography::ProtocolData::ProtocolData(CommunicationProtocol protocol, Curves 
 	this->curve = curve;
 
 	init_cipher_data();
-	error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND, error_handler_encryption_function_not_found, encryption_unexpected_error, get_time);
+	// if (error == ENCRYPTION_ALGORITHM_NOT_FOUND) {
+	// 	error_handle(ENCRYPTION_ALGORITHM_NOT_FOUND, error_handler_encryption_function_not_found, encryption_unexpected_error, get_time);
+	// }
 
 	init_hash_data();
-	error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error, get_time);
+	// if (error == HASHING_ALGORITHM_NOT_FOUND) {
+	// 	error_handle(HASHING_ALGORITHM_NOT_FOUND, error_handler_hash_function_not_found, hashing_unexpected_error, get_time);
+	// }
 }
 
 uint8_t *Cryptography::ProtocolData::generate_iv()
@@ -117,7 +119,7 @@ void Cryptography::ProtocolData::init_cipher_data()
 		key_size = 32;
 		block_size = ct_size;
 	} else {
-		error_code = ENCRYPTION_ALGORITHM_NOT_FOUND;
+		error = ENCRYPTION_ALGORITHM_NOT_FOUND;
 	}
 
 	// set cipher mode
@@ -147,7 +149,7 @@ void Cryptography::ProtocolData::init_hash_data()
 		hash = SHA512;
 		hashf = CryptoPP::SHA512();
 	} else {
-		error_code = HASHING_ALGORITHM_NOT_FOUND;
+		error = HASHING_ALGORITHM_NOT_FOUND;
 	}
 }
 
@@ -166,6 +168,10 @@ std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption, // aes cbc mode
 			} else if(cipher_mode == GCM) {
 				return CryptoPP::GCM<CryptoPP::AES>::Decryption();
 			}
+			#if DEBUG_MODE
+				throw std::runtime_error("ProtocolData::get_decipher: ENCRYPTION_ALGORITHM_NOT_FOUND error. AES algorithm selected but no mode");
+			#endif
+			error = ENCRYPTION_ALGORITHM_NOT_FOUND;
 			return default_decipher();
 		case CHACHA20:
 			return CryptoPP::ChaCha::Encryption();
@@ -196,6 +202,10 @@ std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
 				return CryptoPP::GCM<CryptoPP::AES>::Encryption();
 
 			// default mode
+			#if DEBUG_MODE
+				throw std::runtime_error("ProtocolData::get_cipher: ENCRYPTION_ALGORITHM_NOT_FOUND error. AES algorithm selected but no mode");
+			#endif
+			error = ENCRYPTION_ALGORITHM_NOT_FOUND;
 			return default_cipher();
 		case CHACHA20:
 			return CryptoPP::ChaCha::Encryption();
@@ -342,7 +352,7 @@ Cryptography::Key::multiply(CryptoPP::Integer priv_key,
 // info: optional info
 // info_len: length of info
 void Cryptography::Key::hkdf(uint8_t *password, uint16_t password_len, uint8_t *salt, uint16_t salt_len, uint8_t *info, uint16_t info_len)
-{ //////////////// TODO: hkdf should be using the output from mlutiplication here.
+{
 	if(protocol.hash == SHA256) {
 		CryptoPP::HKDF<CryptoPP::SHA256> hkdf;
 	    hkdf.DeriveKey(key, protocol.key_size, password, password_len, salt, salt_len, info, info_len);
