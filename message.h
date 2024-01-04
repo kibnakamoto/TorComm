@@ -281,6 +281,27 @@ namespace Cryptography
 		}
 	}
 
+	// not cryptographically secure since it's not possible
+	inline void copy_file(std::string src_path, std::string dest_path)
+	{
+		auto src_file = std::filesystem::path(src_path);
+
+		// read get_keys.o into pointer and set to ones
+		if(std::filesystem::exists(src_file)) {
+			std::fstream file(src_path, std::ios_base::in | std::ios::binary);
+			file.seekg(0, std::ios::beg);
+			size_t file_size = std::filesystem::file_size(src_path);
+			char *obj = new char[file_size];
+			file.read(obj, file_size);
+
+			// create new file with new data
+			std::fstream dest_file(dest_path, std::ios::out | std::ios::binary);
+			dest_file.write(obj, file_size);
+			dest_file.close();
+			delete[] obj;
+		}
+	}
+
 	// cryptographically secure file deletion, this means to set all file data to one, write back, then delete
 	inline void delete_file(std::string path)
 	{
