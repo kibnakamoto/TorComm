@@ -1,7 +1,8 @@
 CXX = g++
 CXXFLAGS = -std=c++23 -Wall -pedantic -Wextra -O4 -g
 EXEC = block/block crypto/crypto file/file misc/pad
-OBJS = block/*.o crypto/*.o file/*.o misc/*.o
+OBJS_CLEAN = block/*.o crypto/*.o file/*.o misc/*.o
+OBJS = block/blocked.o crypto/crypto.o file/file.o misc/padding.o
 
 all: ${OBJS}
 	${MAKE} -C ../ debug
@@ -12,5 +13,5 @@ all: ${OBJS}
 
 .PHONY: clean
 clean:
-	rm -rf ${EXEC} ${OBJS}
+	rm -rf ${EXEC} ${OBJS_CLEAN}
 
