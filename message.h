@@ -330,17 +330,6 @@ namespace Cryptography
 			// hash
 			std::variant<CryptoPP::SHA256, CryptoPP::SHA512> hashf;
 
-			// encrypt
-			std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
-						   CryptoPP::GCM<CryptoPP::AES>::Encryption,      // aes gcm mode
-						   CryptoPP::ChaCha::Encryption>  cipherf;         // ChaCha20
-
-			// decrypt
-			std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption, // aes cbc mode
-						   CryptoPP::GCM<CryptoPP::AES>::Decryption,      // aes gcm mode
-						   CryptoPP::ChaCha::Encryption>                  // ChaCha20
-						   decipherf;
-
 			HashAlgorithm hash; // hashing algorithm used
 			CipherAlgorithm cipher; // cipher used
 			CipherMode cipher_mode; // cipher mode
@@ -459,26 +448,6 @@ namespace Cryptography
 
 	namespace /* INTERNAL NAMESPACE */
 	{
-		// for operators in Encryptor for cbc and gcm aes encryption
-		 template<typename T>
-		 concept AesEncryptorCBC_GMC = requires(T t)
-		 {
-		 	{
-		 		(std::same_as<T, CryptoPP::GCM<CryptoPP::AES>::Encryption> ||
-		 		 std::same_as<T, CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption>)
-		 	};
-		 };
-		
-		 // for operators in Decryptor for cbc and gcm aes decryption
-		 template<typename T>
-		 concept AesDecryptorCBC_GMC = requires(T t)
-		 {
-		 	{
-		 		(std::same_as<T, CryptoPP::GCM<CryptoPP::AES>::Decryption> ||
-		 		 std::same_as<T, CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption>)
-		 	};
-		 };
-
 		// for operators in Decryptor for cbc and gcm aes decryption
 		template<typename T>
 		concept SupportedHashAlgs = requires(T t)
@@ -523,16 +492,16 @@ namespace Cryptography
  								CryptoPP::StreamTransformationFilter filter(op1, new CryptoPP::ArraySink(ct,
 																		    							 ct_len),
 																			CryptoPP::StreamTransformationFilter::NO_PADDING);
- 								filter.Put(pt, length);
+ 								filter.Put(pt, ct_len);
  								filter.MessageEnd();
 								break;
 								}
 							case 1:
 								{
 								op2.SetKeyWithIV(key, protocol.key_size, iv, protocol.iv_size);
- 								CryptoPP::StreamTransformationFilter filter(op2, new CryptoPP::ArraySink(ct, ct_len),
-																			CryptoPP::StreamTransformationFilter::NO_PADDING);
- 								filter.Put(pt, length);
+ 								CryptoPP::AuthenticatedEncryptionFilter filter(op2, new CryptoPP::ArraySink(ct, ct_len),
+																		  	   CryptoPP::StreamTransformationFilter::NO_PADDING);
+ 								filter.Put(pt, ct_len);
  								filter.MessageEnd();
 								break;
 								}
@@ -573,7 +542,7 @@ namespace Cryptography
 				char *pad(char *data, std::unsigned_integral auto&length)
 				{
 				    char *dat;
-					char pad_size;
+					int8_t pad_size;
 				    decltype(length) original_length = length;
 					uint8_t mod = length % protocol.block_size;
 				    pad_size = protocol.block_size - mod;
@@ -581,9 +550,10 @@ namespace Cryptography
 						pad_size += protocol.block_size;
 				    length += pad_size;
 				    dat = new char[length];
-				    // memcpy(&dat[pad_size], data, original_length); // for left to right padding
-				    memcpy(dat, data, original_length);				  // for right to left padding (append to end of message)
-					dat[length-1] = pad_size; // last digit of data is length
+				    memcpy(&dat[pad_size], data, original_length); // for left to right padding
+					dat[0] = pad_size;
+				    // memcpy(dat, data, original_length);				  // for right to left padding (append to end of message)
+					// dat[length-1] = pad_size; // last digit of data is length
 				    delete[] data;
 				    return dat;
 				}
@@ -595,10 +565,14 @@ namespace Cryptography
 		ProtocolData protocol;
 		uint8_t *key; // key length is protocol.key_size
 		uint8_t *iv; // iv length is protocol.iv_size
+		CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption dec1; // aes cbc mode
+		CryptoPP::GCM<CryptoPP::AES>::Decryption dec2;      // aes gcm mode
+		CryptoPP::ChaCha::Encryption dec3;                  // ChaCha20
+		int8_t selected;
 
 		public:
 
-			Decipher(ProtocolData &protocol, uint8_t *key, uint8_t *iv);
+			Decipher(ProtocolData &protocol, uint8_t *key);
 
 			// cipher: output of protocol.get_decipher()
 			// ct: ciphertext
@@ -609,9 +583,9 @@ namespace Cryptography
 			void decrypt(uint8_t *ct, uint32_t ct_len, uint8_t *pt, uint32_t length);
 
 			// set key with iv
-			inline void assign_key(uint8_t *key);
+			void assign_key(uint8_t *key);
 
-			inline void assign_iv(uint8_t *iv);
+			void assign_iv(uint8_t *iv);
 
 			// remove padding
 			// the last value of data is pad size to remove
@@ -621,7 +595,19 @@ namespace Cryptography
 			// data: decrypted padded data
 			// length: length of padded data
 			// return: pad size
-			uint8_t unpad(uint8_t *&data, std::unsigned_integral auto &length);
+			uint8_t unpad(uint8_t *&data, uint32_t &length)
+			{
+				uint8_t pad_size = data[0];
+				length -= pad_size;
+			
+				// realloc
+				uint8_t *new_data = new uint8_t[length];
+				memcpy(new_data, &data[pad_size], length);
+				delete[] data;
+				data = new_data;
+			
+				return pad_size;
+			}
 	};
 
 
@@ -678,21 +664,21 @@ namespace Cryptography
 		// pt: plaintext
 		// pt_len: plaintext length
 		// mac_code: Message Authentecation Code unallocated buffer
-		inline void generator_init(auto hmacf, uint8_t *pt, uint64_t pt_len);
-		inline bool verifier_init(auto hmacf, uint8_t *pt, uint64_t len);
+		void generator_init(auto hmacf, uint8_t *pt, uint32_t pt_len);
+		bool verifier_init(auto hmacf, uint8_t *pt, uint32_t len, uint8_t *hmac);
 
 		public:
 				Hmac(ProtocolData &protocol, uint8_t *key);
 
 				~Hmac();
 
-				inline uint8_t *get_mac();
-				inline bool is_verified();
+				uint8_t *get_mac();
+				bool is_verified();
 
 				// generate the HMAC code
-				void generate(uint8_t *pt, uint64_t len);
+				void generate(uint8_t *pt, uint32_t len);
 
-				bool verify(uint8_t *pt, uint64_t len);
+				bool verify(uint8_t *pt, uint32_t len, uint8_t *hmac);
 	};
 
 	// TODO: find a way to secure communication protocol by secritizing some aspects of it

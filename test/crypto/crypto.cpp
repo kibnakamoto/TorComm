@@ -32,7 +32,7 @@ int main()
 {
 	// 1. Test ProtocolData
 	Cryptography::Curves curve = Cryptography::SECP256K1;
-	Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_HMAC_AES256_CBC_SHA256;
+	Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_HMAC_AES256_CBC_SHA512;
 	uint8_t protocol = (uint8_t)comm_protocol + curve;
 	std::cout << std::endl << "protocol number: " << protocol+0 << std::endl;
 	Cryptography::ProtocolData protocold(protocol); // initialize
@@ -119,11 +119,36 @@ int main()
 	std::string str;
 	str = reinterpret_cast<char*>(decrypted);
 	std::cout << "\nDecrypted Text: " << str;
-	
+
+	if(str == plaintext) {
+		std::cout << std::endl << "PASSED - BOB PLAINTEXT = ALICE PLAINTEXT";
+	} else {
+		std::cout << std::endl << "FAILED - BOB PLAINTEXT != ALICE PLAINTEXT";
+	}
 
 	// 5. Test HMAC
+	Cryptography::Hmac hmac(protocold, key);
+
+	// Alice generates the hmac
+	hmac.generate(&plain[pad_size], pt_len-pad_size); // generate hmac for text without padding
+	std::cout << "\nAlice HMAC: " << hex(hmac.get_mac(), protocold.mac_size);
+	uint8_t *alice_mac = new uint8_t[protocold.mac_size];
+	memcpy(alice_mac, hmac.get_mac(), protocold.mac_size);
+
+	// Bob verifies the hmac
+	hmac.verify(decrypted, decrypted_len, alice_mac);
+	std::cout << "\nBob HMAC:   " << hex(hmac.get_mac(), protocold.mac_size);
+
+	if(hmac.is_verified()) {
+		std::cout << std::endl << "PASSED - BOB VERIFIED HMAC";
+	} else {
+		std::cout << std::endl << "FAILED - BOB COULDN\'T VERIFY HMAC";
+	}
+
 	// 6. Test ECDSA (Not Version 1.0)
+
 	std::cout << std::endl;
+	delete[] alice_mac;
 	delete[] iv;
 	delete[] pt;
 	delete[] ct;
