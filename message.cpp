@@ -40,7 +40,6 @@ void Cryptography::ProtocolData::init(uint8_t protocol_no)
 		tmp /= LAST;
 	}	
 	curve = (Curves)(tmp);
-	mac_size = default_mac_size;
 
 	// initialize verification algorithm data
 	if(communication_protocols[protocol].find("ECDSA") != std::string::npos) {
@@ -114,7 +113,7 @@ void Cryptography::ProtocolData::init_cipher_data()
 		key_size = 16;
 		block_size = 16;
 	} else if (communication_protocols[protocol].find("CHACHA20") != std::string::npos) {
-		iv_size = 12;
+		iv_size = 8;
 		cipher = CHACHA20;
 		key_size = 32;
 		block_size = ct_size;
@@ -125,16 +124,10 @@ void Cryptography::ProtocolData::init_cipher_data()
 	// set cipher mode
 	if(communication_protocols[protocol].find("CBC") != std::string::npos) {
 		cipher_mode = CBC;
-		cipherf = CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption();
-		decipherf = CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption();
 	} else if(communication_protocols[protocol].find("GCM") != std::string::npos) {
 		cipher_mode = GCM;
-		cipherf = CryptoPP::GCM<CryptoPP::AES>::Encryption();
-		decipherf = CryptoPP::GCM<CryptoPP::AES>::Decryption();
 	} else { // e.g. CHACHA20, no cipher mode
 		cipher_mode = NO_MODE;
-		cipherf = CryptoPP::ChaCha::Encryption();
-		decipherf = CryptoPP::ChaCha::Encryption();
 	}
 }
 
@@ -145,9 +138,11 @@ void Cryptography::ProtocolData::init_hash_data()
 	if(communication_protocols[protocol].find("SHA256") != std::string::npos) {
 		hash = SHA256;
 		hashf = CryptoPP::SHA256();
+		mac_size = 32;
 	} else if(communication_protocols[protocol].find("SHA512") != std::string::npos) {
 		hash = SHA512;
 		hashf = CryptoPP::SHA512();
+		mac_size = 64;
 	} else {
 		error = HASHING_ALGORITHM_NOT_FOUND;
 	}
@@ -423,10 +418,24 @@ void Cryptography::Cipher::assign_key(uint8_t *key)
 // 	init = true;
 // }
 
-Cryptography::Decipher::Decipher(ProtocolData &protocol, uint8_t *key, uint8_t *iv) : protocol(protocol)
+Cryptography::Decipher::Decipher(ProtocolData &protocol, uint8_t *key) : protocol(protocol)
 {
 	this->key = key; // no need to destroy key since it's not allocated here.
-	this->iv = iv; // no need to destroy key since it's not allocated here.
+
+	switch(protocol.cipher) {
+		case AES256:
+		case AES192:
+		case AES128: 
+			if(protocol.cipher_mode == CBC) {
+				selected = 0;
+			} else {
+				selected = 1;
+			}
+			break;
+		case CHACHA20:
+			selected = 2;
+			break;
+	}
 }
 
 // cipher: output of protocol.get_decipher()
@@ -437,31 +446,28 @@ Cryptography::Decipher::Decipher(ProtocolData &protocol, uint8_t *key, uint8_t *
 // decrypts data, doesn't remove padding
 void Cryptography::Decipher::decrypt(uint8_t *ct, uint32_t ct_len, uint8_t *pt, uint32_t length)
 {
-//
-//		decryptor.ciphertext = ct;
-//		decryptor.plaintext = pt;
-//		decryptor.ciphertext_length = ct_len;
-//		decryptor.plaintext_length = length;
-//		decryptor.init = is_pt_allocated;
-//		std::visit(decryptor, protocol.decipherf);
-
-		// check the encryption types
-		// switch(protocol.cipher) {
-		// 	case CHACHA20:
-		// 		length = ct_len;
-		// 		pt = new uint8_t[length];
-	 	// 		cipher.ProcessData(&pt[0], (const uint8_t*)data, length);
-		// 		break;
-		// 	case AES256:
-		// 	case AES192:
-		// 	case AES128:
-		// 		length = ct_len>>1;
-		// 		pt = new uint8_t[length];
-		// 		CryptoPP::StreamTransformationFilter filter(cipher, new CryptoPP::ArraySink(pt, length));
-		// 		filter.Put(ct, ct_len);
-		// 		filter.MessageEnd();
-		// 		break;
-		// }
+	switch(selected) {
+		case 0:
+			{
+				dec1.SetKeyWithIV(key, protocol.key_size, iv, protocol.iv_size);
+				CryptoPP::StreamTransformationFilter filter(dec1, new CryptoPP::ArraySink(pt, length), CryptoPP::StreamTransformationFilter::NO_PADDING);
+				filter.Put(ct, ct_len);
+				filter.MessageEnd();
+			}
+			break;
+		case 1:
+			{
+				dec2.SetKeyWithIV(key, protocol.key_size, iv, protocol.iv_size);
+				CryptoPP::AuthenticatedDecryptionFilter filter(dec2, new CryptoPP::ArraySink(pt, length), CryptoPP::StreamTransformationFilter::NO_PADDING);
+				filter.Put(ct, ct_len);
+				filter.MessageEnd();
+			}
+			break;
+		case 2:
+			dec3.SetKeyWithIV(key, protocol.key_size, iv, protocol.iv_size);
+		 	dec3.ProcessData(pt, ct, ct_len);
+			break;
+	}
 }
 
 // assign iv
@@ -475,29 +481,6 @@ void Cryptography::Decipher::assign_key(uint8_t *key)
 {
 	this->key = key;
 }
-
-// remove padding
-// the last value of data is pad size to remove
-// keep the pad size from the original length. delete it accordingly
-// to delete:
-//		delete[] (data-pad_size);
-// data: decrypted padded data
-// length: length of padded data
-// return: pad size
-uint8_t Cryptography::Decipher::unpad(uint8_t *&data, std::unsigned_integral auto &length)
-{
-	uint8_t pad_size = data[0];
-	length -= pad_size;
-
-	// realloc
-	uint8_t *new_data = new uint8_t[length];
-	memcpy(new_data, &data[pad_size], length);
-	delete[] data;
-	data = new_data;
-
-	return pad_size;
-}
-
 
 void Cryptography::Ecdsa::signer_init(auto signer, uint8_t *msg, uint16_t msg_len)
 {
@@ -601,33 +584,19 @@ CryptoPP::ECDSA<CryptoPP::ECP, HashAlg> Cryptography::Ecdsa::get_decompressed(ui
 // hmacf: hmac function
 // pt: plaintext
 // pt_len: plaintext length
-void Cryptography::Hmac::generator_init(auto hmacf, uint8_t *pt, uint64_t pt_len)
+void Cryptography::Hmac::generator_init(auto hmacf, uint8_t *pt, uint32_t pt_len)
 {
-	CryptoPP::StringSource initilizer(pt, pt_len, true, 
-	    new CryptoPP::HashFilter(hmacf,
-	        new CryptoPP::ArraySink(mac, protocol.mac_size)
-	    ) // HashFilter      
-	); // StringSource
+	hmacf.CalculateDigest(mac, pt, pt_len);
 }
 
 // mac member has to be initialized before calling
-bool Cryptography::Hmac::verifier_init(auto hmacf, uint8_t *pt, uint64_t len)
+bool Cryptography::Hmac::verifier_init(auto hmacf, uint8_t *pt, uint32_t len, uint8_t *hmac)
 {
-	bool verify = false;
-    const int flags = CryptoPP::HashVerificationFilter::PUT_RESULT | CryptoPP::HashVerificationFilter::HASH_AT_END;
-	uint64_t data_len = len+protocol.mac_size;
-	uint8_t *data = new uint8_t[data_len];
+	hmacf.CalculateDigest(mac, pt, len);
 
-	// copy pt + mac to data
-	memcpy(data, pt, len);
-	memcpy(&data[len], mac, protocol.mac_size);
-
-    
-	CryptoPP::StringSource(data, data_len, true, 
-        new CryptoPP::HashVerificationFilter(hmacf, new CryptoPP::ArraySink((uint8_t*)verify, sizeof(verify)), flags)
-    );
-	delete[] data;
-	return verify;
+    // Compare the calculated HMAC with the expected HMAC
+    bool verified = memcmp(mac, hmac, protocol.mac_size) == 0;
+	return verified;
 }
 
 Cryptography::Hmac::Hmac(ProtocolData &protocol, uint8_t *key) : protocol(protocol)
@@ -654,7 +623,7 @@ bool Cryptography::Hmac::is_verified()
 }
 
 // generate the HMAC code
-void Cryptography::Hmac::generate(uint8_t *pt, uint64_t len)
+void Cryptography::Hmac::generate(uint8_t *pt, uint32_t len)
 {
 	if(protocol.hash == SHA256) {
 		CryptoPP::HMAC<CryptoPP::SHA256> hmac(key, protocol.key_size);
@@ -675,14 +644,14 @@ void Cryptography::Hmac::generate(uint8_t *pt, uint64_t len)
 }
 
 // verify the HMAC code
-bool Cryptography::Hmac::verify(uint8_t *pt, uint64_t len)
+bool Cryptography::Hmac::verify(uint8_t *pt, uint32_t len, uint8_t *mac_code)
 {
 	if(protocol.hash == SHA256) {
 		CryptoPP::HMAC<CryptoPP::SHA256> hmac(key, protocol.key_size);
-		verified = verifier_init(hmac, pt, len);
+		verified = verifier_init(hmac, pt, len, mac_code);
 	} else if(protocol.hash == SHA512) {
 		CryptoPP::HMAC<CryptoPP::SHA512> hmac(key, protocol.key_size);
-		verified = verifier_init(hmac, pt, len);
+		verified = verifier_init(hmac, pt, len, mac_code);
 	} else {
 		#if DEBUG_MODE
 			throw std::runtime_error("Hmac::verify: HASHING_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
@@ -691,7 +660,7 @@ bool Cryptography::Hmac::verify(uint8_t *pt, uint64_t len)
 
 		// default values
 		CryptoPP::HMAC<default_hash> hmac(key, protocol.key_size);
-		verified = verifier_init(hmac, pt, len);
+		verified = verifier_init(hmac, pt, len, mac_code);
 	}
 	return verified;
 }
