@@ -99,7 +99,7 @@ int main()
 	std::cout << "\niv: " << hex(iv, protocold.iv_size);
 	
 	// encrypt
-	uint32_t ct_len = pt_len<<(protocold.key_size/protocold.block_size-1);
+	uint32_t ct_len = pt_len<<(protocold.ct_size/protocold.block_size-1);
 	uint8_t *ct = new uint8_t[ct_len];
 	auto cipherf = protocold.get_cipher();
 	cipher.assign_iv(iv);
@@ -108,6 +108,19 @@ int main()
 	std::cout << "\nciphertext: " << hex(ct, ct_len);
 
 	// 4. Test Decipher
+	Cryptography::Decipher decipher(protocold, key);
+	decipher.assign_iv(iv);
+	uint32_t decrypted_len = ct_len>>(protocold.ct_size/protocold.block_size-1);
+	uint8_t *decrypted = new uint8_t[decrypted_len];
+	decipher.decrypt(ct, ct_len, decrypted, decrypted_len);
+	std::cout << "\ndecrypted: " << hex(decrypted, decrypted_len);
+
+	uint8_t pad_size = decipher.unpad(decrypted, decrypted_len);
+	std::string str;
+	str = reinterpret_cast<char*>(decrypted);
+	std::cout << "\nDecrypted Text: " << str;
+	
+
 	// 5. Test HMAC
 	// 6. Test ECDSA (Not Version 1.0)
 	std::cout << std::endl;
