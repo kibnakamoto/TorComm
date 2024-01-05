@@ -145,6 +145,7 @@ void Cryptography::ProtocolData::init_hash_data()
 		mac_size = 64;
 	} else {
 		error = HASHING_ALGORITHM_NOT_FOUND;
+		mac_size = default_mac_size;
 	}
 }
 
