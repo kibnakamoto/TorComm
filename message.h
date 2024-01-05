@@ -401,14 +401,14 @@ namespace Cryptography
 		public:
 			// to get cipher: auto cipher = get_cipher();
 			std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption, // aes cbc mode
-						   CryptoPP::GCM<CryptoPP::AES>::Decryption,      // aes gcm mode
-						   CryptoPP::ChaCha::Encryption>                  // ChaCha20
-						   get_decipher();
+						 CryptoPP::GCM<CryptoPP::AES>::Decryption,      // aes gcm mode
+						 CryptoPP::ChaCha::Encryption>                  // ChaCha20
+						 get_decipher();
 
 			// to get cipher: auto cipher = get_cipher();
 			std::variant<CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption, // aes cbc mode
-						   CryptoPP::GCM<CryptoPP::AES>::Encryption,      // aes gcm mode
-						   CryptoPP::ChaCha::Encryption>                  // ChaCha20
+						 CryptoPP::GCM<CryptoPP::AES>::Encryption,      // aes gcm mode
+						 CryptoPP::ChaCha::Encryption>                  // ChaCha20
 						   get_cipher();
 
 			// to get hash: auto hashf = get_hash();
@@ -460,24 +460,24 @@ namespace Cryptography
 	namespace /* INTERNAL NAMESPACE */
 	{
 		// for operators in Encryptor for cbc and gcm aes encryption
-		template<typename T>
-		concept AesEncryptorCBC_GMC = requires(T t)
-		{
-			{
-				(std::same_as<T, CryptoPP::GCM<CryptoPP::AES>::Encryption> || 
-				 std::same_as<T, CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption>)
-			};
-		};
-
-		// for operators in Decryptor for cbc and gcm aes decryption
-		template<typename T>
-		concept AesDecryptorCBC_GMC = requires(T t)
-		{
-			{
-				(std::same_as<T, CryptoPP::GCM<CryptoPP::AES>::Decryption> || 
-				 std::same_as<T, CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption>)
-			};
-		};
+		 template<typename T>
+		 concept AesEncryptorCBC_GMC = requires(T t)
+		 {
+		 	{
+		 		(std::same_as<T, CryptoPP::GCM<CryptoPP::AES>::Encryption> ||
+		 		 std::same_as<T, CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption>)
+		 	};
+		 };
+		
+		 // for operators in Decryptor for cbc and gcm aes decryption
+		 template<typename T>
+		 concept AesDecryptorCBC_GMC = requires(T t)
+		 {
+		 	{
+		 		(std::same_as<T, CryptoPP::GCM<CryptoPP::AES>::Decryption> ||
+		 		 std::same_as<T, CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption>)
+		 	};
+		 };
 
 		// for operators in Decryptor for cbc and gcm aes decryption
 		template<typename T>
@@ -497,29 +497,13 @@ namespace Cryptography
 		ProtocolData protocol;
 		uint8_t *key; // key length is protocol.key_size
 		uint8_t *iv; // iv length is protocol.iv_size
-
-		struct Encryptor
-		{
-			uint8_t *plaintext;
-			uint8_t *ciphertext;
-			uint16_t plaintext_length;
-			uint16_t ciphertext_length;
-			bool init=false;
-
-			//void operator()(CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption &enc)
-			void operator()(AesEncryptorCBC_GMC auto &enc); // added the requirement of AesEncryptor because the same function required for 2 types
-
-			// void operator()(CryptoPP::GCM<CryptoPP::AES>::Encryption &enc) // same function definition above if concept doesn't work
-
-			void operator()(CryptoPP::ChaCha::Encryption &enc);
-		};
-		Encryptor encryptor = Encryptor();
+		CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption op1; // aes cbc mode
+		CryptoPP::GCM<CryptoPP::AES>::Encryption op2;      // aes gcm mode
+		CryptoPP::ChaCha::Encryption op3;                  // ChaCha20
+		int8_t selected;
 
 		public:
-				Cipher(ProtocolData &protocol, uint8_t *key, uint8_t *iv);
-
-				// set key with iv
-				void set_key(auto cipher);
+				Cipher(ProtocolData &protocol, uint8_t *key);
 
 				void assign_iv(uint8_t *iv);
 				void assign_key(uint8_t *key);
@@ -530,10 +514,55 @@ namespace Cryptography
 				// ct: ciphertext
 				// ct_len: ciphertext length
 				// mem_allocated: if memory is allocated, don't reallocate
-				void encrypt(auto &data, uint16_t length, uint8_t *&ct, uint16_t &ct_len, bool &is_ct_allocated);
+				void encrypt(uint8_t *pt, uint32_t length, uint8_t *ct, uint32_t ct_len)
+				{
+						switch(selected) {
+							case 0:
+								{
+								op1.SetKeyWithIV(key, protocol.key_size, iv, protocol.iv_size);
+ 								CryptoPP::StreamTransformationFilter filter(op1, new CryptoPP::ArraySink(ct,
+																		    							 ct_len),
+																			CryptoPP::StreamTransformationFilter::NO_PADDING);
+ 								filter.Put(pt, length);
+ 								filter.MessageEnd();
+								break;
+								}
+							case 1:
+								{
+								op2.SetKeyWithIV(key, protocol.key_size, iv, protocol.iv_size);
+ 								CryptoPP::StreamTransformationFilter filter(op2, new CryptoPP::ArraySink(ct, ct_len),
+																			CryptoPP::StreamTransformationFilter::NO_PADDING);
+ 								filter.Put(pt, length);
+ 								filter.MessageEnd();
+								break;
+								}
+							case 2:
+								op3.SetKeyWithIV(key, protocol.key_size, iv, protocol.iv_size);
+ 								op3.ProcessData(ct, pt, length);
+								break;
+						}
+				}
 
 				// to convert strings and boost buffers to uint8_t*
-				static constexpr uint8_t *to_uint8_ptr(auto data);
+				static uint8_t *to_uint8_ptr(boost::asio::const_buffers_1 data)
+				{
+					return const_cast<uint8_t*>(boost::asio::buffer_cast<const uint8_t*>(data));
+				}
+
+				static uint8_t *to_uint8_ptr(boost::asio::mutable_buffers_1 data)
+				{
+					return boost::asio::buffer_cast<uint8_t*>(data);
+				}
+
+				static uint8_t *to_uint8_ptr(std::string data)
+				{
+					return reinterpret_cast<uint8_t*>(const_cast<char*>(data.c_str()));
+				}
+
+				static uint8_t *to_uint8_ptr(char *data)
+				{
+					return reinterpret_cast<uint8_t*>(data);
+				}
 
 				// reminder: length of data is the length of plaintext data to send. Data packet. Not the whole data
 
@@ -541,7 +570,23 @@ namespace Cryptography
 				// length: length of data
 				// pad_size: pad_size
 				// Pads the data from left to right. no need to remove padding, just remove the first zero digits
-				char *pad(char *data, std::unsigned_integral auto &length);
+				char *pad(char *data, std::unsigned_integral auto&length)
+				{
+				    char *dat;
+					char pad_size;
+				    decltype(length) original_length = length;
+					uint8_t mod = length % protocol.block_size;
+				    pad_size = protocol.block_size - mod;
+					if(mod == 0) // if 32-byte unpadded, then pad_size=0, if zero, than dat[length-1] = pad_size would modify the plaintext
+						pad_size += protocol.block_size;
+				    length += pad_size;
+				    dat = new char[length];
+				    // memcpy(&dat[pad_size], data, original_length); // for left to right padding
+				    memcpy(dat, data, original_length);				  // for right to left padding (append to end of message)
+					dat[length-1] = pad_size; // last digit of data is length
+				    delete[] data;
+				    return dat;
+				}
 	};
 
 	// Decryption
@@ -550,21 +595,6 @@ namespace Cryptography
 		ProtocolData protocol;
 		uint8_t *key; // key length is protocol.key_size
 		uint8_t *iv; // iv length is protocol.iv_size
-		
-		struct Decryptor
-		{
-			uint8_t *plaintext;
-			uint8_t *ciphertext;
-			uint16_t plaintext_length;
-			uint16_t ciphertext_length;
-			bool init = false; // is memory allocated
-
-			// check the encryption types
-			void operator()(AesDecryptorCBC_GMC auto &dec);
-
-			void operator()(CryptoPP::ChaCha::Encryption &dec);
-		};
-		Decryptor decryptor = Decryptor();
 
 		public:
 
@@ -576,10 +606,7 @@ namespace Cryptography
 			// data: plaintext
 			// length: data length, the send packet length. if 1GB image, it would be IMAGE_BUFFER_SIZE, if last packet. has to be padded to be a multiple of protocol.block_size.
 			// decrypts data, doesn't remove padding
-			void decrypt(auto &ct, uint16_t ct_len, uint8_t *&pt, uint16_t &length, bool &is_pt_allocated);
-			
-			// set key with iv
-			void set_key(auto cipher);
+			void decrypt(uint8_t *ct, uint32_t ct_len, uint8_t *pt, uint32_t length);
 
 			// set key with iv
 			inline void assign_key(uint8_t *key);
