@@ -445,7 +445,7 @@ Cryptography::Decipher::Decipher(ProtocolData &protocol, uint8_t *key) : protoco
 // pt: plaintext
 // length: pt length
 // decrypts data, doesn't remove padding
-void Cryptography::Decipher::decrypt(uint8_t *ct, uint32_t ct_len, uint8_t *pt, uint32_t length)
+void Cryptography::Decipher::decrypt(uint8_t *ct, uint64_t ct_len, uint8_t *pt, uint64_t length)
 {
 	switch(selected) {
 		case 0:
@@ -585,13 +585,13 @@ CryptoPP::ECDSA<CryptoPP::ECP, HashAlg> Cryptography::Ecdsa::get_decompressed(ui
 // hmacf: hmac function
 // pt: plaintext
 // pt_len: plaintext length
-void Cryptography::Hmac::generator_init(auto hmacf, uint8_t *pt, uint32_t pt_len)
+void Cryptography::Hmac::generator_init(auto hmacf, uint8_t *pt, uint64_t pt_len)
 {
 	hmacf.CalculateDigest(mac, pt, pt_len);
 }
 
 // mac member has to be initialized before calling
-bool Cryptography::Hmac::verifier_init(auto hmacf, uint8_t *pt, uint32_t len, uint8_t *hmac)
+bool Cryptography::Hmac::verifier_init(auto hmacf, uint8_t *pt, uint64_t len, uint8_t *hmac)
 {
 	hmacf.CalculateDigest(mac, pt, len);
 
@@ -624,7 +624,7 @@ bool Cryptography::Hmac::is_verified()
 }
 
 // generate the HMAC code
-void Cryptography::Hmac::generate(uint8_t *pt, uint32_t len)
+void Cryptography::Hmac::generate(uint8_t *pt, uint64_t len)
 {
 	if(protocol.hash == SHA256) {
 		CryptoPP::HMAC<CryptoPP::SHA256> hmac(key, protocol.key_size);
@@ -645,7 +645,7 @@ void Cryptography::Hmac::generate(uint8_t *pt, uint32_t len)
 }
 
 // verify the HMAC code
-bool Cryptography::Hmac::verify(uint8_t *pt, uint32_t len, uint8_t *mac_code)
+bool Cryptography::Hmac::verify(uint8_t *pt, uint64_t len, uint8_t *mac_code)
 {
 	if(protocol.hash == SHA256) {
 		CryptoPP::HMAC<CryptoPP::SHA256> hmac(key, protocol.key_size);
