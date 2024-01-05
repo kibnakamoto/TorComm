@@ -153,9 +153,7 @@ class P2P
 		boost::asio::ip::tcp::resolver resolver;
 		boost::asio::ip::tcp::resolver::results_type endpoints;
 		std::string ip; // get ipv6 of this device
-		uint8_t *buffer;
 		boost::asio::ip::v6_only ipv6_option{true};
-		std::string local_key_path; // keys file
 		Blocked blocked;
 		// inline static uint32_t max_requests = 10; // the total amount of receive requests that can be made before quitting
 
@@ -170,6 +168,11 @@ class P2P
 
 			// listen to oncoming connections
     		listener.listen();
+		}
+
+		std::string get_ip()
+		{
+			return ip;
 		}
 
 		// accept connection, their client sends to this server.
@@ -223,8 +226,9 @@ class P2P
 		}
 
 		// connect to their server even if blocked
-		void connect()
+		void connect(std::string address, uint16_t port_)
 		{
+			//boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::make_address(address), port_);
 			auto &socket = servers.emplace_back(io_context); // start socket
 			boost::asio::async_connect(socket, endpoints, [this](boost::system::error_code ec, boost::asio::ip::tcp::endpoint) {
 				if(ec) {
