@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++23 -Wall -pedantic -Wextra -O4 -g
+CXXFLAGS = -std=c++2b -Wall -pedantic -Wextra -O4 -g
 EXEC = pad
 OBJS = padding.o
 
