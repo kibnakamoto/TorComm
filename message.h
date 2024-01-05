@@ -595,7 +595,7 @@ namespace Cryptography
 			// data: decrypted padded data
 			// length: length of padded data
 			// return: pad size
-			uint8_t unpad(uint8_t *&data, uint32_t &length)
+			uint8_t unpad(uint8_t *&data, std::unsigned_integral auto &length)
 			{
 				uint8_t pad_size = data[0];
 				length -= pad_size;

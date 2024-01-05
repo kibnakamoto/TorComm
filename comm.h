@@ -475,21 +475,23 @@ class P2P
 			// receive full packet
 			if(type == DATA_FORMAT::_FILE_) {
 				uint8_t *plain;
+				uint64_t pt_len;
 
 				// no segmentation needed
 				if(length <= NO_SEGMENTATION_SIZES::NSEG_FILE_SIZE) {
 					data = new uint8_t[length]; // ciphertext data
 					recv(*received_from, data, length); // receive the data
+					uint64_t cipher_len = length-security_len;
+					pt_len = cipher_len >> div;
+					plain = new uint8_t[pt_len];
 
 					// data format: MAC + IV + encrypted(pad-size + padding + filename-length + filename + DATA)
-					memcpy(&hmac.get_mac()[0], data, protocol.mac_size); // get mac
 					memcpy(iv, &data[protocol.mac_size], protocol.iv_size); // get iv
+					// mac is data[0]-data[protocol.mac_size]
 
 					// decrypt
-					uint64_t pt_len;
 					decipher.assign_iv(iv);
-					decipher.set_key(got_decipher);
-					decipher.decrypt(got_decipher, &data[security_len], length, plain, pt_len, 0);
+					decipher.decrypt(&data[security_len], cipher_len, plain, pt_len);
 
 					// get file name and padding
 					uint16_t file_name_len;
@@ -502,29 +504,28 @@ class P2P
 					length = pt_len-data_start_index; // set length of file
 
 					// verify
-					bool verified = hmac.verify(plain, pt_len); // verified is saved in hmac
+					bool verified = hmac.verify(plain, pt_len, data); // verified is saved in hmac
 					if(verified) { // if correct data, save it
 						std::ofstream file(dat);// add the file data to a file
 						file.write(reinterpret_cast<char*>(&plain[data_start_index]), length);
 						file.close();
 					}
 				} else { // a large file, needs segmentation
-					const uint16_t cipher_len = (type + (protocol.block_size - type%protocol.block_size))<<div; // ciphertext length per packet
+					const uint16_t cipher_len = (type + protocol.block_size)<<div; // ciphertext length per packet
 					const uint16_t packet_len = security_len + cipher_len; // length of every packet
 					data = new uint8_t[packet_len]; // whole data
 					recv(*received_from, data, packet_len); // receive the data
 
 					// data format: MAC + IV + encrypted(pad-size + padding + filename-length + filename + DATA)
-					memcpy(&hmac.get_mac()[0], data, protocol.mac_size); // get mac
 					memcpy(iv, &data[protocol.mac_size], protocol.iv_size); // get iv
+					// mac can stay in data
 
 					// decrypt
-					uint64_t pt_len;
+					pt_len = type;
 					decipher.assign_iv(iv);
-					decipher.set_key(got_decipher);
-					decipher.decrypt(got_decipher, &data[security_len], packet_len, plain, pt_len, 0);
+					decipher.decrypt(&data[security_len], cipher_len, plain, pt_len);
 
-					bool verified = hmac.verify(plain, pt_len); // verified is saved in hmac
+					bool verified = hmac.verify(plain, pt_len, data); // verified is saved in hmac
 					if(!verified) {
 						delete[] plain;
 						delete[] iv;
@@ -550,15 +551,13 @@ class P2P
 						recv(*received_from, data, packet_len); // receive the data
 
 						// data format: MAC + IV + encrypted(pad-size + padding + filename-length + filename + DATA)
-						memcpy(&hmac.get_mac()[0], data, protocol.mac_size); // get mac
 						memcpy(iv, &data[protocol.mac_size], protocol.iv_size); // get iv
 
 						// decrypt
 						decipher.assign_iv(iv);
-						decipher.set_key(got_decipher);
-						decipher.decrypt(got_decipher, &data[security_len], packet_len, plain, pt_len, 1);
+						decipher.decrypt(&data[security_len], packet_len, plain, pt_len);
 						
-						verified = hmac.verify(plain, pt_len); // verified is saved in hmac
+						verified = hmac.verify(plain, pt_len, data); // verified is saved in hmac
 
 						if(!verified)
 							break;
@@ -577,24 +576,23 @@ class P2P
 				recv(*received_from, data, length);
 
 				// data format: MAC + IV + DATA
-				memcpy(&hmac.get_mac()[0], data, protocol.mac_size); // get mac
 				memcpy(iv, &data[protocol.mac_size], protocol.iv_size); // get iv
 				
-				uint64_t pt_len; // plaintext length
 				length -= security_len; // subtract mac and iv from dat size because it's no longer important
+				uint64_t pt_len = length >> div; // plaintext length
 
 				// decrypt
-				uint8_t *tmp = reinterpret_cast<uint8_t*>(dat.c_str());
+				uint8_t *tmp = new uint8_t[pt_len];
 				decipher.assign_iv(iv);
-				decipher.set_key(got_decipher);
-				decipher.decrypt(got_decipher, &data[security_len], length, tmp, pt_len, 0);
+				decipher.decrypt(&data[security_len], length, tmp, pt_len);
 				length = pt_len; // set length of dat
 
 				// remove padding
-				tmp = decipher.unpad(tmp, pt_len);
+				uint8_t pad_size = decipher.unpad(tmp, pt_len);
+				dat = reinterpret_cast<char*>(tmp);
 
 				// verify
-				hmac.verify(tmp, pt_len); // verified is saved in hmac
+				hmac.verify(tmp, pt_len, data); // verified is saved in hmac
 			}
 
 			delete[] iv;
@@ -692,7 +690,7 @@ class P2P
 		// 	verifier: hmac/ecdsa, *******ONLY SUPPORTS HMAC FOR NOW*******
 		void send_full(std::string dat, DATA_FORMAT type,
 					   Cryptography::ProtocolData &protocol,
-					   Cryptography::Cipher &cipher, auto got_cipher, Cryptography::Hmac verifier)
+					   Cryptography::Cipher &cipher, Cryptography::Hmac verifier)
 		{
 			uint64_t length = dat.length();
 			const uint16_t security_len = protocol.mac_size + protocol.iv_size;
@@ -742,12 +740,12 @@ class P2P
 					in.read(&data[data_start_index], length);
 
 					// encrypt
+					uint8_t *u8data = reinterpret_cast<uint8_t*>(data);
 					cipher.assign_iv(iv);
-					cipher.set_key(got_cipher); // set key with iv
-					cipher.encrypt(got_cipher, data, data_len, &packet[security_len], cipher_len, 1);
+					cipher.encrypt(u8data, data_len, &packet[security_len], cipher_len);
 
 					// generate HMAC
-					verifier.generate(reinterpret_cast<uint8_t*>(data), data_len);
+					verifier.generate(u8data, data_len);
 
 					// copy mac and iv
 					memcpy(packet, verifier.get_mac(), protocol.mac_size);
@@ -782,12 +780,12 @@ class P2P
 							memset(&data[s_size], 0, type-s_size); // since allocated size is valid, then the data_size just needs padding of zeros appended
 
 						// encrypt
+						uint8_t *u8data = reinterpret_cast<uint8_t*>(data);
 						cipher.assign_iv(iv);
-						cipher.set_key(got_cipher); // set key with iv
-						cipher.encrypt(got_cipher, data, s_size, &packet[security_len], cipher_len, 1);
+						cipher.encrypt(u8data, s_size, &packet[security_len], cipher_len);
 	
 						// generate HMAC
-						verifier.generate(reinterpret_cast<uint8_t*>(data), s_size);
+						verifier.generate(u8data, s_size);
 
 						// copy mac and iv
 						memcpy(packet, verifier.get_mac(), protocol.mac_size);
@@ -809,11 +807,11 @@ class P2P
 			// For text or delete:
 
 			// find length of full data to send:
-			uint8_t *data;
+			uint8_t *packet;
 			uint64_t len = (length + (protocol.block_size - length%protocol.block_size))<<div; // ciphertext length
 			uint64_t full_len = len+security_len;
 			uint8_t *iv = protocol.generate_iv(); // get new iv
-			data = new uint8_t[full_len];
+			packet = new uint8_t[full_len];
 
 			 // pad data
 			if(length%protocol.block_size != 0) {
@@ -822,24 +820,23 @@ class P2P
 
 			// encrypt
 			cipher.assign_iv(iv);
-			cipher.set_key(got_cipher); // set key with iv
-			cipher.encrypt(got_cipher, reinterpret_cast<uint8_t*>(&dat[0]), length, &data[security_len], len, 1);
+			cipher.encrypt(reinterpret_cast<uint8_t*>(&dat[0]), length, &packet[security_len], len);
 
 			// generate HMAC
-			verifier.generate(reinterpret_cast<uint8_t*>(data), length);
+			verifier.generate(reinterpret_cast<uint8_t*>(&dat[0]), length);
 
 			// copy mac and iv
-			memcpy(data, verifier.mac, protocol.mac_size);
-			memcpy(&data[protocol.mac_size], iv, protocol.iv_size);
+			memcpy(packet, verifier.get_mac(), protocol.mac_size);
+			memcpy(&packet[protocol.mac_size], iv, protocol.iv_size);
 
 			// send genesis packet
 			send_genesis(full_len, (uint16_t)type>>5);
 
 			// send data, tcp will break down the data
-			send(data, full_len);
+			send(packet, full_len);
 
 			delete[] iv;
-			delete[] data;
+			delete[] packet;
 			/*
 
 			// partition data (if required), encrypt and send
