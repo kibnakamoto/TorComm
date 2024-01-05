@@ -1,4 +1,4 @@
-CXX = clang++
+CXX = g++
 CXXFLAGS = -std=c++2b -Wall -pedantic -Wextra -O4
 CRYPTOPP_FLAGS =   -Iinclude -Llib -lcryptopp -lpthread
 JSON_FLAGS = -ljsoncpp

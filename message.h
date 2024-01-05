@@ -44,7 +44,7 @@
 #include <cryptopp/pubkey.h>
 #include <cryptopp/sha.h>
 
-#include <jsoncpp/json/json.h>
+#include <json/json.h>
 
 #include "settings.h"
 #include "keys.h"
