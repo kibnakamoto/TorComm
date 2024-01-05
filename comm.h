@@ -159,6 +159,8 @@ class P2P
 		Blocked blocked;
 		// inline static uint32_t max_requests = 10; // the total amount of receive requests that can be made before quitting
 
+		public:
+
 		P2P(uint16_t port, Blocked blocked) : listener(boost::asio::ip::tcp::acceptor(io_context, {{}, port}, true)),
 											  resolver(io_context)
 		{
@@ -232,6 +234,8 @@ class P2P
 						file << "\nerror in P2P::connect(): " << ec.message();
 						file.close();
 					}
+				} else {
+					std::cout << std::endl << "CALLED ASYNC_CONNECT";
 				}
 			});
 		}
