@@ -1,3 +1,4 @@
+#include <cryptopp/modes.h>
 #include <iostream>
 #include <stdint.h>
 #include <string>
@@ -57,13 +58,13 @@ int main()
 	auto alice = alice_key.multiply(bob_key.public_key);
 	uint8_t *alice_x = new uint8_t[curve_size];
 	alice_key.integer_to_bytes(alice.x, alice_x, curve_size);
-	alice_key.hkdf(alice_x, curve_size, (uint8_t*)"", 0, (uint8_t*)"", 0);
+	alice_key.hkdf(alice_x, curve_size, (uint8_t*)"", 0, (uint8_t*)"", 0); // HKDF
 
 	// ECDH - Bob
 	auto bob = bob_key.multiply(alice_key.public_key);
 	uint8_t *bob_x = new uint8_t[curve_size];
 	bob_key.integer_to_bytes(bob.x, bob_x, curve_size);
-	bob_key.hkdf(bob_x, curve_size, (uint8_t*)"", 0, (uint8_t*)"", 0);
+	bob_key.hkdf(bob_x, curve_size, (uint8_t*)"", 0, (uint8_t*)"", 0); // HKDF
 
 	std::cout << "\n\nAlice\'s Shared Secret: (" << hex(alice.x) << "," << hex(alice.y) << ")";
 	std::cout << "\nBob\'s Shared Secret: (" << hex(bob.x) << "," << hex(bob.y) << ")";
@@ -81,12 +82,37 @@ int main()
 	
 	delete[] alice_x;
 	delete[] bob_x;
-	std::string plaintext = "hello world!";
-	// 3. Test Cipher
+	std::string plaintext = "hello world!"; // length: 12
+	uint16_t pt_len = plaintext.length();
+	char *pt = new char[pt_len];
+	memcpy(pt, plaintext.c_str(), pt_len);
 
-	// 4. Test HMAC
-	// 5. Test Decipher
+	uint8_t *iv = protocold.generate_iv();
+	uint8_t *key = alice_key.key;
+
+	// 3. Test Cipher
+	Cryptography::Cipher cipher(protocold, key);
+	pt = cipher.pad(pt, pt_len);
+	std::cout << "\n\n\nplaintext: " << plaintext;
+	std::cout << "\npadded plaintext: " << hex((uint8_t*)pt, pt_len);
+	assert(pt_len%16 == 0); // assert that plaintext is in 16-byte segments
+	std::cout << "\niv: " << hex(iv, protocold.iv_size);
+	
+	// encrypt
+	uint32_t ct_len = pt_len<<(protocold.key_size/protocold.block_size-1);
+	uint8_t *ct = new uint8_t[ct_len];
+	auto cipherf = protocold.get_cipher();
+	cipher.assign_iv(iv);
+	uint8_t *plain = cipher.to_uint8_ptr(pt);
+	cipher.encrypt(plain, pt_len, ct, ct_len);
+	std::cout << "\nciphertext: " << hex(ct, ct_len);
+
+	// 4. Test Decipher
+	// 5. Test HMAC
 	// 6. Test ECDSA (Not Version 1.0)
 	std::cout << std::endl;
+	delete[] iv;
+	delete[] pt;
+	delete[] ct;
 	return 0;
 }
