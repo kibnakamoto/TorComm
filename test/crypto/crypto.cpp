@@ -130,7 +130,7 @@ int main()
 	Cryptography::Hmac hmac(protocold, key);
 
 	// Alice generates the hmac
-	hmac.generate(&plain[pad_size], pt_len-pad_size); // generate hmac for text without padding
+	hmac.generate(&plain[pad_size], (uint64_t)pt_len-pad_size); // generate hmac for text without padding
 	std::cout << "\nAlice HMAC: " << hex(hmac.get_mac(), protocold.mac_size);
 	uint8_t *alice_mac = new uint8_t[protocold.mac_size];
 	memcpy(alice_mac, hmac.get_mac(), protocold.mac_size);

@@ -374,7 +374,7 @@ class P2P
 		void send_genesis(uint64_t len, uint8_t type)
 		{
 			// client sends network packet
-			uint8_t *dat;
+			uint8_t *dat = nullptr;
 			uint8_t dat_len = set_info(dat, len, type);
 			for(auto &client : clients) {
 				boost::asio::async_write(client, boost::asio::buffer(dat, dat_len), [&](boost::system::error_code ec, uint64_t) {
@@ -466,7 +466,7 @@ class P2P
 			if(received_from == nullptr) {
 				return 0; // no one is sending
 			}
-			type = (uint16_t)type_<<5; // converted to uint16 so that the shift doesn't overflow
+			type = (DATA_FORMAT)((uint16_t)type_<<5); // converted to uint16 so that the shift doesn't overflow
 
 			/* PADDING OF FILES:
 			 * before filename length, add a one byte padding length. When writing to a file, only add up to the length - padding_length

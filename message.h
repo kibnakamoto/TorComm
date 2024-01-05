@@ -483,7 +483,7 @@ namespace Cryptography
 				// ct: ciphertext
 				// ct_len: ciphertext length
 				// mem_allocated: if memory is allocated, don't reallocate
-				void encrypt(uint8_t *pt, uint32_t length, uint8_t *ct, uint32_t ct_len)
+				void encrypt(uint8_t *pt, uint64_t length, uint8_t *ct, uint64_t ct_len)
 				{
 						switch(selected) {
 							case 0:
@@ -580,7 +580,7 @@ namespace Cryptography
 			// data: plaintext
 			// length: data length, the send packet length. if 1GB image, it would be IMAGE_BUFFER_SIZE, if last packet. has to be padded to be a multiple of protocol.block_size.
 			// decrypts data, doesn't remove padding
-			void decrypt(uint8_t *ct, uint32_t ct_len, uint8_t *pt, uint32_t length);
+			void decrypt(uint8_t *ct, uint64_t ct_len, uint8_t *pt, uint64_t length);
 
 			// set key with iv
 			void assign_key(uint8_t *key);
@@ -664,8 +664,8 @@ namespace Cryptography
 		// pt: plaintext
 		// pt_len: plaintext length
 		// mac_code: Message Authentecation Code unallocated buffer
-		void generator_init(auto hmacf, uint8_t *pt, uint32_t pt_len);
-		bool verifier_init(auto hmacf, uint8_t *pt, uint32_t len, uint8_t *hmac);
+		void generator_init(auto hmacf, uint8_t *pt, uint64_t pt_len);
+		bool verifier_init(auto hmacf, uint8_t *pt, uint64_t len, uint8_t *hmac);
 
 		public:
 				Hmac(ProtocolData &protocol, uint8_t *key);
@@ -676,9 +676,9 @@ namespace Cryptography
 				bool is_verified();
 
 				// generate the HMAC code
-				void generate(uint8_t *pt, uint32_t len);
+				void generate(uint8_t *pt, uint64_t len);
 
-				bool verify(uint8_t *pt, uint32_t len, uint8_t *hmac);
+				bool verify(uint8_t *pt, uint64_t len, uint8_t *hmac);
 	};
 
 	// TODO: find a way to secure communication protocol by secritizing some aspects of it
