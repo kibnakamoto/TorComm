@@ -18,7 +18,7 @@
 #ifndef SETTINGS_H
 #define SETTINGS_H
 #include <fstream>
-#include <jsoncpp/json/json.h>
+#include <json/json.h>
 
 #include <iostream>
 

@@ -23,7 +23,7 @@
 
 #include <boost/asio/buffer.hpp>
 
-#include <jsoncpp/json/json.h>
+#include <json/json.h>
 
 Cryptography::ProtocolData::ProtocolData(uint8_t protocol_no)
 {
