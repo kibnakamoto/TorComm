@@ -96,7 +96,7 @@ void gen_key_exe(uint8_t *key_value=nullptr, uint16_t key_size=68, uint16_t enc_
 		command << "\n	encrypted[" << i << "] = " << encrypted[i]+0 << ";";
 		command << "\n	hash[" << i << "] = " << hash[i]+0 << ";";
 		command << "\n	hash_pepper[" << i+32 << "] = " << pepper[i+32]+0 << ";";
-		if(i < 29) { // 30,31 not included
+		if(i < 30) { // 30,31 not included
 			command << "\n	hash_pepper[" << i << "] = " << pepper[i]+0 << ";";
 		}
 	}
@@ -121,10 +121,10 @@ void gen_key_exe(uint8_t *key_value=nullptr, uint16_t key_size=68, uint16_t enc_
 	command << "\n		for(int i=0;i<password.length();i++) {"; // use password in hash_pepper
 	command << "\n			hash_pepper[i+32] ^= password[i];";
 	command << "\n		}";
-	command << "\n		for(uint32_t i=0;i<0xffffff;i++) {"; // guess the 2 missing bytes
+	command << "\n		for(uint32_t i=0;i<0xffff;i++) {"; // guess the 2 missing bytes
 	command << "\n			hash_pepper[31] = i & 0xff;"; // guess first byte
-	command << "\n			hash_pepper[30] = i >> 16;"; // guess second byte
-	command << "\n			hash_pepper[29] = i >> 8;"; // guess second byte
+	command << "\n			hash_pepper[30] = i >> 8;"; // guess second byte
+	// command << "\n			hash_pepper[29] = i >> 8;"; // guess third byte
 	command << "\n			CryptoPP::SHA256().CalculateDigest(tmp_hash, hash_pepper, 64);";
 	command << "\n			CryptoPP::SHA256().CalculateDigest(tmp_hash2, tmp_hash, 32);"; // re-hash and compare
 	command << "\n			bool equal = 1;";
