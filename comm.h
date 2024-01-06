@@ -76,7 +76,7 @@ concept Boost_Buffer_Type = requires(T t)
 // For parsing received network packets
 // parse packet to get text, images, videos, or delete
 // then use Message class to 
-static void get_info(uint8_t *dat, uint64_t &len, uint8_t &type);
+void get_info(uint8_t *dat, uint64_t &len, uint8_t &type);
 
 
 /* ECDH
@@ -97,7 +97,7 @@ enum DATA_FORMAT {
 // len: length
 // type: type of message (TEXT, IMAGE, etc)
 // return: length of dat
-static uint8_t set_info(uint8_t *dat, uint64_t len, uint8_t type);
+uint8_t set_info(uint8_t *dat, uint64_t len, uint8_t type);
 
 // blocked ips
 class Blocked
@@ -152,18 +152,18 @@ class P2P
 		boost::asio::ip::tcp::acceptor listener;
 		boost::asio::ip::tcp::resolver resolver;
 		boost::asio::ip::tcp::resolver::results_type endpoints;
-		std::string ip; // get ipv6 of this device
-		boost::asio::ip::v6_only ipv6_option{true};
+		std::string ip; // get ip of this device
 		Blocked blocked;
 		// inline static uint32_t max_requests = 10; // the total amount of receive requests that can be made before quitting
 
 		public:
 
-		P2P(uint16_t port, Blocked blocked) : listener(boost::asio::ip::tcp::acceptor(io_context, {{}, port}, true)),
+		P2P(uint16_t port, Blocked blocked) : listener(boost::asio::ip::tcp::acceptor(io_context, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v6(), port))),
 											  resolver(io_context)
 		{
 			this->blocked = blocked;
 			ip = get_ipv6();
+			//ip = "10.0.0.137";
 			endpoints = resolver.resolve(ip, std::to_string(port)); // get endpoints
 
 			// listen to oncoming connections
@@ -180,16 +180,21 @@ class P2P
 		{
         	listener.async_accept([&](boost::system::error_code const& ec, boost::asio::ip::tcp::socket sock) {
 				if (!ec) {
-					sock.set_option(ipv6_option);
-
 					// if ip address blocked, don't add as a client
-					if(blocked.is_blocked(sock.remote_endpoint().address().to_string())) {
+		            auto remote_endpoint = sock.remote_endpoint();
+    		        if (!remote_endpoint.address().is_unspecified() && !blocked.is_blocked(remote_endpoint.address().to_v6().to_string())) {
+						std::cout << "\nblocked connection";
 						sock.close(); // stop socket because it's blocked
 					} else {
-				    	clients.push_back(std::move(sock));
+						if(std::find_if(clients.begin(), clients.end(), [remote_endpoint](const auto&socket)
+						   { return remote_endpoint == socket.remote_endpoint();} ) == clients.end()) {
+							std::cout << "\nnew connected to " << remote_endpoint;
+				    		clients.push_back(std::move(sock));
+						}
 					}
 				    accept();
 				} else {
+					std::cout << std::endl << "P2P::accept() error: " << ec.message() << "\n";
 					if(log_network_issues) {
 						std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
 						file << "\nerror in P2P::accept(): " << ec.message();
@@ -204,18 +209,27 @@ class P2P
 		{
         	listener.async_accept([&](boost::system::error_code const& ec, boost::asio::ip::tcp::socket sock) {
 				if (!ec) {
-					std::string sock_ip = sock.remote_endpoint().address().to_string();
+					// if ip address is in ips
+		            auto remote_endpoint = sock.remote_endpoint();
+					std::string connected_to = remote_endpoint.address().to_v6().to_string();
+					if(!remote_endpoint.address().is_unspecified() && std::any_of(ips.begin(), ips.end(),
+					   [connected_to](std::string ip) { return ip == connected_to; })) {
 
-					// if ip matches any ips in ips
-					if(std::any_of(ips.begin(), ips.end(), [sock_ip](std::string ip) {return ip == sock_ip;})) {
-							sock.set_option(ipv6_option);
-
-							// can connect even if blocked
+						// it's already connected
+						if(std::any_of(clients.begin(), clients.end(), [remote_endpoint](const auto &socket)
+						   		   { return remote_endpoint == socket.remote_endpoint(); })) {
+							std::cout << "\n" << remote_endpoint << " is already connected";
+						} else { // not already connected
+							std::cout << "\nnew connection to " << remote_endpoint;
 				    		clients.push_back(std::move(sock));
+						}
 					} else {
+						std::cout << "\nIp Not in List: " << remote_endpoint;
 						sock.close();
 					}
+				    accept(); // continue listening
 				} else {
+					std::cout << std::endl << "P2P::accept(ips) error: " << ec.message() << "\n";
 					if(log_network_issues) {
 						std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
 						file << "\nerror in P2P::accept(ips): " << ec.message();
@@ -226,23 +240,44 @@ class P2P
 		}
 
 		// connect to their server even if blocked
-		void connect(std::string address, uint16_t port_)
+		void connect(std::string address, uint16_t port_, uint32_t reattempt_after_fail = 5)
 		{
-			//boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::make_address(address), port_);
+			auto endpoint_ = resolver.resolve(address, std::to_string(port_));
+
+			if(endpoint_.empty())
+			{
+				std::cout << "Failed to Resolve Endpoint For " << address << ":" << port_ << std::endl;
+				return;
+			}
+			
+			// Attempt to connect
 			auto &socket = servers.emplace_back(io_context); // start socket
-			boost::asio::async_connect(socket, endpoints, [this](boost::system::error_code ec, boost::asio::ip::tcp::endpoint) {
-				if(ec) {
-					servers.pop_back(); // remove last element because there is an error
-					if(log_network_issues) {
-						std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-						file << "\nerror in P2P::connect(): " << ec.message();
-						file.close();
+			async_connect(socket, endpoint_, [this, address, port_, reattempt_after_fail](boost::system::error_code ec, boost::asio::ip::tcp::endpoint) {
+				if (ec) {
+					std::cout << "Failed Connection " << reattempt_after_fail << " (" << ec.message()
+							  << "): Reconnecting in 3 Seconds..." << std::endl;
+
+					// wait 3 seconds
+					boost::asio::steady_timer timer(io_context, boost::asio::chrono::seconds(3));
+					timer.wait();
+					if (reattempt_after_fail > 1) { // call if reattempt wanted
+						connect(address, port_, reattempt_after_fail - 1);
+					} else {
+					 	std::cout << "Failed Connection: Too Many Attempts, Connection Failed" << std::endl;
+					 	servers.pop_back(); // remove last element because there is an error
+
+						if (log_network_issues) {
+							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+							file << "\nerror in P2P::connect(): " << ec.message() << " - " << get_time();
+							file.close();
+						}
 					}
 				} else {
-					std::cout << std::endl << "CALLED ASYNC_CONNECT";
+					std::cout << std::endl << "CALLED ASYNC_CONNECT - SUCCESS" << std::endl << std::flush;
 				}
 			});
 		}
+
 
 		// after calling connect
 		// send_to: person receiving
