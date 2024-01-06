@@ -21,6 +21,7 @@
 #include <functional>
 #include <ctime>
 #include <chrono>
+#include <filesystem>
 
 // error codes
 enum ERRORS
@@ -48,11 +49,15 @@ const constexpr static char* ERROR_STRING[]
 	"NO_PROTOCOL",
 };
 
+inline std::string abs_path(std::string file) {
+	return std::filesystem::absolute(file).string();
+}
+
 // if USE_DEFAULT_VALUES, when an algorithm is not found, it will use a predefined one
 #define USE_DEFAULT_VALUES false
 #define DEBUG_MODE true // debug mode will allow throwing errors rather than assigning them
-#define ERRORS_LOG_FILE "log/errors.log"
-#define NETWORK_LOG_FILE "log/network.log"
+#define ERRORS_LOG_FILE abs_path("log/errors.log")
+#define NETWORK_LOG_FILE abs_path("log/network.log")
 inline bool log_network_issues = true; // changable
 
 class ErrorHandling
