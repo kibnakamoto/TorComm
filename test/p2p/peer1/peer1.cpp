@@ -19,9 +19,13 @@ int main()
 	// std::string their_ip = "10.0.0.213";
 	Blocked blocked = Blocked("../../../security/keys", "../../../blocked");
 	P2P p2p = P2P(port, blocked);
-	//p2p.accept();
 	p2p.connect(their_ip, port, [&p2p, protocol, &key](boost::asio::ip::tcp::socket &socket) mutable {
-		p2p.send_two_party_ecdh(socket, protocol, key);
+		// p2p.send_two_party_ecdh(socket, protocol, key);
+	});
+
+	p2p.accept([&p2p, protocol, &key](boost::asio::ip::tcp::socket &socket) mutable {
+		ERRORS error;
+		// p2p.recv_two_party_ecdh(socket, protocol, key, error);
 	});
 	p2p.start_async();
 	return 0;
