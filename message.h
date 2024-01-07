@@ -429,16 +429,16 @@ namespace Cryptography
 				static CryptoPP::Integer bytes_to_integer(uint8_t *bytes, uint16_t &bytes_len);
 
 				static CryptoPP::ECPPoint reconstruct_point_from_bytes(uint8_t *public_key_x,
-																			  uint16_t public_key_x_len,
-																			  uint8_t *public_key_y,
-																			  uint16_t public_key_y_len);
+																	   uint16_t public_key_x_len,
+																	   uint8_t *public_key_y,
+																	   uint16_t public_key_y_len);
 
-				// bob's public key is multiplied with alice's to generate the ECDH key.
+				// bob's public key is multiplied with alice's private key to generate the ECDH key.
 				CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element
 				multiply(CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k);
 
-				// bob's public key is multiplied with alice's to generate the ECDH key.
-				inline CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element
+				// bob's public key is multiplied with alice's private key to generate the ECDH key.
+				CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element
 				multiply(CryptoPP::Integer priv_key,
 						 CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k);
 

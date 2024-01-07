@@ -92,11 +92,7 @@ enum DATA_FORMAT {
 };
 
 
-// get the data information from data
-// dat: bytearray of len and type
-// len: length
-// type: type of message (TEXT, IMAGE, etc)
-// return: length of dat
+// set the first 72-bits of data from packet
 uint8_t set_info(uint8_t *dat, uint64_t len, uint8_t type);
 
 // blocked ips
@@ -163,7 +159,6 @@ class P2P
 		{
 			this->blocked = blocked;
 			ip = get_ipv6();
-			//ip = "10.0.0.137";
 			endpoints = resolver.resolve(ip, std::to_string(port)); // get endpoints
 
 			// listen to oncoming connections
@@ -176,7 +171,7 @@ class P2P
 		}
 
 		// accept connection, their client sends to this server.
-		void accept()
+		void accept(Cryptography::ProtocolData protocol, Cryptography::Key key)
 		{
         	listener.async_accept([&](boost::system::error_code const& ec, boost::asio::ip::tcp::socket sock) {
 				if (!ec) {
@@ -188,11 +183,13 @@ class P2P
 					} else {
 						if(std::find_if(clients.begin(), clients.end(), [remote_endpoint](const auto&socket)
 						   { return remote_endpoint == socket.remote_endpoint();} ) == clients.end()) {
-							std::cout << "\nnew connected to " << remote_endpoint;
+							std::cout << "\nnew connection to " << remote_endpoint;
+							ERRORS error;
+							recv_two_party_ecdh(std::move(sock), protocol, key, error);
 				    		clients.push_back(std::move(sock));
 						}
 					}
-				    accept();
+				    accept(protocol, key);
 				} else {
 					std::cout << std::endl << "P2P::accept() error: " << ec.message() << "\n";
 					if(log_network_issues) {
@@ -224,10 +221,10 @@ class P2P
 				    		clients.push_back(std::move(sock));
 						}
 					} else {
-						std::cout << "\nIp Not in List: " << remote_endpoint;
+						std::cout << "\nIp Not in List. Refusing Connection to " << remote_endpoint;
 						sock.close();
 					}
-				    accept(); // continue listening
+				    accept(ips); // continue listening
 				} else {
 					std::cout << std::endl << "P2P::accept(ips) error: " << ec.message() << "\n";
 					if(log_network_issues) {
@@ -240,7 +237,7 @@ class P2P
 		}
 
 		// connect to their server even if blocked
-		void connect(std::string address, uint16_t port_, uint32_t reattempt_after_fail = 5)
+		void connect(std::string address, uint16_t port_, Cryptography::ProtocolData protocol, Cryptography::Key &key, uint32_t reattempt_after_fail = 5)
 		{
 			auto endpoint_ = resolver.resolve(address, std::to_string(port_));
 
@@ -251,8 +248,11 @@ class P2P
 			}
 			
 			// Attempt to connect
-			auto &socket = servers.emplace_back(io_context); // start socket
-			async_connect(socket, endpoint_, [this, address, port_, reattempt_after_fail](boost::system::error_code ec, boost::asio::ip::tcp::endpoint) {
+			auto socket = std::make_shared<boost::asio::ip::tcp::socket>(io_context); // start socket
+			servers.emplace_back(std::move(*socket));
+			async_connect(*socket, endpoint_, [this, address, port_, protocol, &key,
+											   reattempt_after_fail, socket](boost::system::error_code ec,
+													   						 boost::asio::ip::tcp::endpoint) mutable {
 				if (ec) {
 					std::cout << "Failed Connection " << reattempt_after_fail << " (" << ec.message()
 							  << "): Reconnecting in 3 Seconds..." << std::endl;
@@ -261,7 +261,7 @@ class P2P
 					boost::asio::steady_timer timer(io_context, boost::asio::chrono::seconds(3));
 					timer.wait();
 					if (reattempt_after_fail > 1) { // call if reattempt wanted
-						connect(address, port_, reattempt_after_fail - 1);
+						connect(address, port_, protocol, key, reattempt_after_fail - 1);
 					} else {
 					 	std::cout << "Failed Connection: Too Many Attempts, Connection Failed" << std::endl;
 					 	servers.pop_back(); // remove last element because there is an error
@@ -274,6 +274,7 @@ class P2P
 					}
 				} else {
 					std::cout << std::endl << "CALLED ASYNC_CONNECT - SUCCESS" << std::endl << std::flush;
+					send_two_party_ecdh(*socket, protocol, key);
 				}
 			});
 		}
@@ -282,7 +283,7 @@ class P2P
 		// after calling connect
 		// send_to: person receiving
 		// return: if the other person exists after called find_to_recv with their ip address.
-		bool send_two_party_ecdh(boost::asio::ip::tcp::socket send_to, Cryptography::ProtocolData protocol,
+		bool send_two_party_ecdh(boost::asio::ip::tcp::socket &send_to, Cryptography::ProtocolData protocol,
 								 Cryptography::Key &key)
 		{
 			// no compression
@@ -314,7 +315,7 @@ class P2P
 			recv(*recv_from, &packet[0], length); // reuse packet, receive their public key
 
 			// use their keys
-			CryptoPP::ECPPoint public_bob = key.reconstruct_point_from_bytes(packet, xy_len, &packet[xy_len], xy_len);
+			CryptoPP::ECPPoint public_bob = Cryptography::Key::reconstruct_point_from_bytes(packet, xy_len, &packet[xy_len], xy_len);
 			auto shared_secret = key.multiply(public_bob);
 			uint16_t shared_secret_len = shared_secret.x.MinEncodedSize();
 			shared_secret.x.Encode(&packet[0], shared_secret_len, CryptoPP::Integer::UNSIGNED); // add the data to an array (used packet since it's already allocated)
@@ -437,7 +438,7 @@ class P2P
 		void send_genesis(boost::asio::ip::tcp::socket &sender, uint64_t len, uint8_t type)
 		{
 			// client sends network packet
-			uint8_t *dat;
+			uint8_t *dat = nullptr;
 			uint8_t dat_len = set_info(dat, len, type);
 			boost::asio::async_write(sender, boost::asio::buffer(dat, dat_len), [&](boost::system::error_code ec, uint64_t) {
 				if (ec) {

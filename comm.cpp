@@ -44,7 +44,11 @@ void get_info(uint8_t *dat, uint64_t &len, uint8_t &type)
 	type = dat[8];
 }
 
-
+// get the data information from data
+// dat: bytearray of len and type
+// len: length
+// type: type of message (TEXT, IMAGE, etc)
+// return: length of dat
 // set the first 72-bits of data from packet
 uint8_t set_info(uint8_t *dat, uint64_t len, uint8_t type)
 {

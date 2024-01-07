@@ -315,7 +315,7 @@ CryptoPP::Integer Cryptography::Key::bytes_to_integer(uint8_t *bytes, uint16_t &
 	return x;
 }
 
-inline CryptoPP::ECPPoint Cryptography::Key::reconstruct_point_from_bytes(uint8_t *public_key_x,
+CryptoPP::ECPPoint Cryptography::Key::reconstruct_point_from_bytes(uint8_t *public_key_x,
 															  					 uint16_t public_key_x_len,
 															  					 uint8_t *public_key_y,
 															  					 uint16_t public_key_y_len)
