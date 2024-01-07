@@ -6,7 +6,7 @@ CURL_FLAGS = -lcurl
 BOOST_FLAGS = -lboost_filesystem
 FLAGS = ${BOOST_FLAGS} ${CRYPTOPP_FLAGS} ${JSON_FLAGS} ${CURL_FLAGS}
 EXEC = peer1
-OBJS = peer1.o ../../../comm.o ../../../message.o ../../../keys.o ../../../settings.o 
+OBJS = ../../../comm.o ../../../message.o ../../../keys.o ../../../settings.o peer1.o 
 
 all: ${OBJS}
 	${CXX} ${CXXFLAGS}  ${OBJS} -o ${EXEC} ${FLAGS}
