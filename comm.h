@@ -170,26 +170,29 @@ class P2P
 			return ip;
 		}
 
+	    using FunctionSocket = std::function<void(boost::asio::ip::tcp::socket&)>;
+
 		// accept connection, their client sends to this server.
-		void accept(Cryptography::ProtocolData protocol, Cryptography::Key key)
+		void accept(const FunctionSocket &lambda=nullptr)
 		{
         	listener.async_accept([&](boost::system::error_code const& ec, boost::asio::ip::tcp::socket sock) {
 				if (!ec) {
 					// if ip address blocked, don't add as a client
 		            auto remote_endpoint = sock.remote_endpoint();
-    		        if (!remote_endpoint.address().is_unspecified() && !blocked.is_blocked(remote_endpoint.address().to_v6().to_string())) {
+    		        if (!remote_endpoint.address().is_unspecified() && blocked.is_blocked(remote_endpoint.address().to_v6().to_string())) {
 						std::cout << "\nblocked connection";
 						sock.close(); // stop socket because it's blocked
 					} else {
-						if(std::find_if(clients.begin(), clients.end(), [remote_endpoint](const auto&socket)
+						if(std::find_if(clients.begin(), clients.end(), [remote_endpoint](const auto &socket)
 						   { return remote_endpoint == socket.remote_endpoint();} ) == clients.end()) {
 							std::cout << "\nnew connection to " << remote_endpoint;
-							ERRORS error;
-							recv_two_party_ecdh(std::move(sock), protocol, key, error);
 				    		clients.push_back(std::move(sock));
+							if(lambda) {
+								lambda(sock);
+							}
 						}
 					}
-				    accept(protocol, key);
+				    accept(lambda);
 				} else {
 					std::cout << std::endl << "P2P::accept() error: " << ec.message() << "\n";
 					if(log_network_issues) {
@@ -202,7 +205,7 @@ class P2P
 		}
 
 		// accept connection from specific ip only
-		void accept(std::vector<std::string> ips)
+		void accept(std::vector<std::string> ips) // TODO: keep up to date with working previous accept function
 		{
         	listener.async_accept([&](boost::system::error_code const& ec, boost::asio::ip::tcp::socket sock) {
 				if (!ec) {
@@ -237,7 +240,7 @@ class P2P
 		}
 
 		// connect to their server even if blocked
-		void connect(std::string address, uint16_t port_, Cryptography::ProtocolData protocol, Cryptography::Key &key, uint32_t reattempt_after_fail = 5)
+		void connect(std::string address, uint16_t port_, const FunctionSocket &lambda=nullptr, uint32_t reattempt_after_fail = 5)
 		{
 			auto endpoint_ = resolver.resolve(address, std::to_string(port_));
 
@@ -250,9 +253,9 @@ class P2P
 			// Attempt to connect
 			auto socket = std::make_shared<boost::asio::ip::tcp::socket>(io_context); // start socket
 			servers.emplace_back(std::move(*socket));
-			async_connect(*socket, endpoint_, [this, address, port_, protocol, &key,
-											   reattempt_after_fail, socket](boost::system::error_code ec,
-													   						 boost::asio::ip::tcp::endpoint) mutable {
+			async_connect(*socket, endpoint_, [this, address, port_,
+											   reattempt_after_fail, socket, lambda](boost::system::error_code ec,
+													   						 boost::asio::ip::tcp::endpoint) {
 				if (ec) {
 					std::cout << "Failed Connection " << reattempt_after_fail << " (" << ec.message()
 							  << "): Reconnecting in 3 Seconds..." << std::endl;
@@ -261,7 +264,7 @@ class P2P
 					boost::asio::steady_timer timer(io_context, boost::asio::chrono::seconds(3));
 					timer.wait();
 					if (reattempt_after_fail > 1) { // call if reattempt wanted
-						connect(address, port_, protocol, key, reattempt_after_fail - 1);
+						connect(address, port_, lambda, reattempt_after_fail - 1);
 					} else {
 					 	std::cout << "Failed Connection: Too Many Attempts, Connection Failed" << std::endl;
 					 	servers.pop_back(); // remove last element because there is an error
@@ -274,7 +277,9 @@ class P2P
 					}
 				} else {
 					std::cout << std::endl << "CALLED ASYNC_CONNECT - SUCCESS" << std::endl << std::flush;
-					send_two_party_ecdh(*socket, protocol, key);
+					if(lambda) { // if function exists
+						lambda(*socket); // call lambda upen successful connection
+					}
 				}
 			});
 		}
@@ -328,7 +333,7 @@ class P2P
 		// recv_from: the sending node
 		// errors: CAN ONLY BE NO_PROTOCOL. CHECK IF NO_PROTOCOL
 		// return: if the other person exists after called find_to_recv with their ip address.
-		bool recv_two_party_ecdh(boost::asio::ip::tcp::socket recv_from, Cryptography::ProtocolData protocol,
+		bool recv_two_party_ecdh(boost::asio::ip::tcp::socket &recv_from, Cryptography::ProtocolData protocol,
 								 Cryptography::Key &key, ERRORS &error)
 		{
 			// no compression
