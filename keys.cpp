@@ -108,7 +108,6 @@ uint16_t hex_str_to(std::string str, uint8_t *ptr)
 	return len;
 }
 
-// IPv4 not supported
 void parse_ipv4(uint8_t *out, std::string ip)
 {
 	// assign ip_key
@@ -139,7 +138,7 @@ static size_t write_call_back(void *contents, size_t size, size_t nmemb, void *u
     return size * nmemb;
 }
 
-// get public ipv6 address
+// get ipv6 address
 std::string get_ipv6()
 {
 	 CURL *curl;
@@ -155,6 +154,24 @@ std::string get_ipv6()
    }
    return ret;
 }
+
+// get public ipv4 address
+// std::string get_ipv4()
+// {
+// 	 CURL *curl;
+//    std::string ret;
+// 
+//    curl = curl_easy_init();
+//    if(curl) {
+//      curl_easy_setopt(curl, CURLOPT_URL, "http://www.myexternalip.com/raw");
+//      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_call_back);
+// 	 curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ret);
+// 	 curl_easy_perform(curl);
+//     curl_easy_cleanup(curl);
+//    }
+//    return ret;
+// }
+
 
 // parse configure.json in sessions, modify config for updating values
 Configure::Configure(std::string configpath)
