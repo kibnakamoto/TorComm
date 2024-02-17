@@ -17,6 +17,14 @@ all: ${OBJS}
 %.o: %.cpp %.h
 	${CXX} ${CXXFLAGS} $< -c ${FLAGS}
 
+test: ${OBJS}
+	${MAKE}
+	${MAKE} -C test
+
+security: ${OBJS}
+	${MAKE}
+	${MAKE} -C security
+
 #${EXEC}: ${CPPS} ${HEADERS} ${OBJS}
 #	${MAKE} all
 #
@@ -33,3 +41,4 @@ debug: ${OBJS}
 .PHONY: clean
 clean:
 	rm -rf ${EXEC} ${OBJS}
+	${MAKE} -C test clean
