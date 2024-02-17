@@ -25,6 +25,67 @@
 
 #include <json/json.h>
 
+// key_path: path to keys file
+// ct_ip: ciphertext of ip
+// ct_ip_len: length of ct_ip
+// iv: 16-byte iv
+std::string Cryptography::decrypt_ip_with_pepper(std::string key_path, uint8_t *ct_ip, uint16_t ct_ip_len, uint8_t *iv)
+{
+	std::string ip;
+	LocalKeys local_key(key_path); // get local key parameters like key and length
+	
+	CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption decipherf;
+	decipherf.SetKeyWithIV(local_key.keys, local_key.key_len, iv, CryptoPP::AES::BLOCKSIZE);
+	CryptoPP::StreamTransformationFilter filter(decipherf, new CryptoPP::StringSink(ip), CryptoPP::StreamTransformationFilter::NO_PADDING);
+	filter.Put(ct_ip, ct_ip_len>>1);
+	filter.MessageEnd();
+
+	// remove padding and pepper
+	// ip[0] is pad size
+	ip = ip.erase(0, ip[0]+local_key.pepper_len);
+	
+	return ip;
+}
+
+// key_path: path to keys file
+// ip: ip address to encrypt
+// out_len: the new output length. Output is returned
+// iv: 16-byte IV
+uint8_t *Cryptography::encrypt_ip_with_pepper(std::string key_path, std::string ip, uint16_t &out_len, uint8_t *iv)
+{
+	LocalKeys local_key(key_path); // get local key parameters like key and length
+	uint16_t ip_len = ip.length();
+	uint16_t new_len = local_key.pepper_len+ip_len;
+
+	// pad ip + pepper
+	uint8_t pad_size;
+	uint8_t mod = new_len % 16;
+	pad_size = 16 - mod;
+	if(mod == 0) // if 32-byte unpadded, then pad_size=0, if zero, than dat[length-1] = pad_size would modify the plaintext
+		pad_size += 16;
+	new_len += pad_size;
+	uint8_t *in = new uint8_t[new_len];
+	memset(in, 0, pad_size); // pad
+	memcpy(&in[pad_size], local_key.get_pepper(), local_key.pepper_len); // add pepper
+	memcpy(&in[pad_size+local_key.pepper_len], ip.c_str(), ip_len); // add ip
+	in[0] = pad_size; // first byte of data is length
+	out_len = new_len<<1; // ct len is double pt len
+	
+	// generate IV
+	CryptoPP::AutoSeededRandomPool rng;
+	rng.GenerateBlock(iv, CryptoPP::AES::BLOCKSIZE); // 16-byte IV
+
+	// encrypt using AES-256-CBC
+	uint8_t *out = new uint8_t[out_len];
+	CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption cipherf;
+	cipherf.SetKeyWithIV(local_key.keys, local_key.key_len, iv, CryptoPP::AES::BLOCKSIZE);
+	CryptoPP::StreamTransformationFilter filter(cipherf, new CryptoPP::ArraySink(out, out_len), CryptoPP::StreamTransformationFilter::NO_PADDING);
+	filter.Put(in, out_len); // TODO: WHY AND HOW IS IT OUT_LEN? IT SHOULD BE NEW_LEN BUT THAT ONLY USES HALF OF OUT. HOW?
+	filter.MessageEnd();
+	delete[] in;
+	return out;
+}
+
 Cryptography::ProtocolData::ProtocolData(uint8_t protocol_no)
 {
 	init(protocol_no);
