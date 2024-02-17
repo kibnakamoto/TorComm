@@ -1,5 +1,5 @@
 {
-	"keys" : "./keys.txt",
+	"keys" : "./security/keys",
 	"save" : 1,
 	"time": 1,
 	"tor" : 1,
