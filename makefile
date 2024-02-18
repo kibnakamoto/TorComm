@@ -42,3 +42,4 @@ debug: ${OBJS}
 clean:
 	rm -rf ${EXEC} ${OBJS}
 	${MAKE} -C test clean
+	# don't clean security as that can contain the executable for securing the key with password.

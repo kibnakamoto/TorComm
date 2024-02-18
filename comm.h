@@ -240,6 +240,10 @@ class P2P
 		}
 
 		// connect to their server even if blocked
+		// address: the ip address
+		// port_: port to connect to
+		// lambda: lambda function, called after successful connection if defined
+		// reattempt_after_fail: how many times should it try to reconnect after failing
 		void connect(std::string address, uint16_t port_, const FunctionSocket &lambda=nullptr, uint32_t reattempt_after_fail = 5)
 		{
 			auto endpoint_ = resolver.resolve(address, std::to_string(port_));
@@ -352,6 +356,12 @@ class P2P
 				#if DEBUG_MODE
 					throw std::runtime_error("P2P::recv_two_party_ecdh: NO_PROTOCOL error. the protocol given by the sender is not valid.");
 				#endif
+
+				if(log_network_issues) {
+					std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+					file << "\nerror in P2P::recv_two_party_ecdh(recv_from, protocol, key, error): protocol number doesn\'t exist";
+					file.close();
+				}
 				error = NO_PROTOCOL; // no protocol found. Cannot establish secure public channel
 				// when calling function: make sure to check if error == NO_PROTOCOL
 				return 1;
