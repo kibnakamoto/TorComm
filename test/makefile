@@ -4,6 +4,11 @@ EXEC = block/block crypto/crypto file/file misc/pad
 OBJS_CLEAN = block/*.o crypto/*.o file/*.o misc/*.o
 OBJS = block/blocked.o crypto/crypto.o file/file.o misc/padding.o
 
+# block: test blocking an ip address
+# crypto: test cryptography
+# file: test file management
+# misc: certain functions used in code (cryptographic padding)
+
 all: ${OBJS}
 	${MAKE} -C ../ debug
 	${MAKE} -C block/
