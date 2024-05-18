@@ -14,7 +14,8 @@ int main()
 	Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_HMAC_AES256_CBC_SHA512;
 	uint8_t protocol_no = (uint8_t)comm_protocol + curve;
 	Cryptography::ProtocolData protocol(protocol_no); // initialize
-	assert(protocol.error == NO_ERROR); // check if there are any errors
+	assert(protocol.error == NO_ERROR); // check if there are any errors, maybe add to errors.log if error exists
+
 	Cryptography::Key key(protocol);
 
 	// 2607:fea8:1f1b:3d00:7ed:429f:d15d:24cb
@@ -26,12 +27,15 @@ int main()
 	Blocked blocked = Blocked("../../../security/keys", "../../../blocked");
 	P2P p2p = P2P(port, blocked);
 	p2p.accept([&p2p, protocol, &key](boost::asio::ip::tcp::socket &socket) mutable {
-		// ERRORS error;
-		// p2p.recv_two_party_ecdh(socket, protocol, key, error);
+		std::cout << std::endl << "accepted connection successfully";
+		//ERRORS error;
+		//p2p.recv_two_party_ecdh(socket, protocol, key, error);
 	});
-	//p2p.connect(their_ip, port, [&p2p, protocol, &key](boost::asio::ip::tcp::socket &socket) mutable {
-	//	// p2p.send_two_party_ecdh(socket, protocol, key);
-	//});
+
+	p2p.connect(their_ip, port, [&p2p, protocol, &key](boost::asio::ip::tcp::socket &socket) mutable {
+		std::cout << std::endl << "p2p connection started successfully";
+		// p2p.send_two_party_ecdh(socket, protocol, key);
+	});
 
 	p2p.start_async();
 	return 0;
