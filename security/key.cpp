@@ -144,7 +144,7 @@ void gen_key_exe(uint8_t *key_value=nullptr, uint16_t key_size=68, uint16_t enc_
 	command << "\n				std::this_thread::sleep_for(std::chrono::seconds(30));";
 	command << "\n			}";
 	command << "\n		}";
-	command << "\n		std::this_thread::sleep_for(std::chrono::seconds(rng.GenerateWord32(1,5)));"; // wait for 3 seconds regardless of match, so the user doesn't know if it is correct or wrong without waiting 3 seconds
+	command << "\n		std::this_thread::sleep_for(std::chrono::seconds(rng.GenerateWord32(1,5)));"; // wait for 1-5 seconds regardless of match, so the user doesn't know if it is correct or wrong without waiting 1-5 seconds
 	command << "\n		if(!valid) {"; // if wrong password
 	command << "\n			invalid_count++;";
 	command << "\n			for(int i=0;i<password.length();i++) {"; // remove password from hash_pepper
