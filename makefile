@@ -5,6 +5,8 @@ JSON_FLAGS = -ljsoncpp
 CURL_FLAGS = -lcurl
 BOOST_FLAGS = -lboost_filesystem
 FLAGS = ${BOOST_FLAGS} ${CRYPTOPP_FLAGS} ${JSON_FLAGS} ${CURL_FLAGS}
+PDF_FILE = TorComm.tex
+PDF_DOC_FILES = TorComm.log TorComm.out TorComm.aux
 EXEC = torcomm
 HEADERS = settings.h keys.h settings.h comm.h message.h
 # CPPS = torcomm.cpp keys.cpp settings.cpp
@@ -25,6 +27,14 @@ security: ${OBJS}
 	${MAKE}
 	${MAKE} -C security
 
+pdf:
+	pdflatex TorComm.tex
+	pdflatex TorComm.tex
+	evince TorComm.pdf
+
+pdf_clean:
+	rm -rf ${PDF_DOC_FILES}
+
 #${EXEC}: ${CPPS} ${HEADERS} ${OBJS}
 #	${MAKE} all
 #
@@ -40,7 +50,7 @@ debug: ${OBJS}
 
 .PHONY: clean
 clean:
-	rm -rf ${EXEC} ${OBJS}
+	rm -rf ${EXEC} ${OBJS} ${PDF_DOC_FILES}
 	${MAKE} -C test clean
 
 # don't clean security with 'make clean' as that can contain the executable for securing the key with password.
