@@ -15,6 +15,7 @@
  }
 
 \definecolor{pseudoColor}{rgb}{0.94,0.94,0.93}
+\definecolor{cgreen}{RGB}{8, 110, 16}
 
 \lstdefinestyle{PseudoCode}{
     backgroundcolor=\color{pseudoColor},
@@ -26,6 +27,7 @@
 	keywordstyle=[2]\color{red},
 	keywordstyle=[3]\color{cyan},
     numberstyle=\tiny\color{magenta},
+	commentstyle=\color{cgreen},
     basicstyle=\ttfamily\footnotesize,
     breakatwhitespace=false,
     breaklines=true,
@@ -40,6 +42,7 @@
 		keywords={Generate, set, if, If, Else, Pause, Sleep},
 	keywords=[2]{sha256, chacha},
 	keywords=[3]{key},
+	comment=[l]{\#},
 }
 
 \lstset{style=PseudoCode,language=Pseudo}
@@ -74,13 +77,44 @@
 
 \pagenumbering{roman}
 
+\section{Blocking}
+
+\subsection{Algorithm}
+
+blocking an ip address code is in comm.cpp, the algorithm is as follows:
+
+\begin{figure}[htb]
+\begin{small}
+\begin{lstlisting}[language=pseudo, escapeinside={(*}{*)}]
+
+Generate(iv) # 12-byte iv
+key = 32-byte key from (*$keys$*) file
+pepper = 32-byte pepper from (*$keys$*) file
+
+# encrypt ip
+encrypted = AES-256-CBC(key=key, data=ip, iv=iv)
+
+# store encrypted ip in blocked file
+write(encrypted + " " + iv, "blocked")
+
+\end{lstlisting}
+\end{small}
+\caption{Block}\label{blocking}
+\end{figure}
+
 \section{Key Protector}
+
 
 \subsection{What Is It}
 
 The Key protector app in security folder is used to secure a 32-byte symmetric key, 2-byte port key, 32-byte pepper. The output is in a file named $keys$. The data in this file is used for securing the local data. It needs a 4-32 byte password generated and stored by you. 
 
 To set the password, execute the $key$ file which would generate the $get\_keys$ executable which is the key protector program. Store a copy of $get\_keys$ in somewhere secure if you don't want to lose it. If you lose the $get\_keys$ and don't have the $keys$ file, then your key is forever lost.
+
+\subsubsection{What is the keys used for}
+
+The key is used for securing any personal data stored on the device. Such as the configuration file for each session. If you're texting somebody and want to save their ip address so you can conviniently text them again without re-entering the ip address and reconfiguring the communication session, the ip and other data needs to be encrypted and stored.
+The 2-byte port key is used for encrypting the ports in configuration files
 
 \subsection{Algorithm}
 The C++ code is in $security/key.cpp$, but the basic idea is as following:
@@ -102,7 +136,7 @@ Generate exe for getting key ((*$get\_keys$*)):
 		(*$result = pepper \oplus password$*)
 		Compute sha256(sha256(result)) and compare with stored sha256(sha256(result)).
 		if no match:
-			Continue guessing all possible 3-bytes. Once done, let user guess again
+			Continue guessing all possible 3-bytes
 
 		if user guessed more than once:
 			If guessed 3 or 6 times and while guess count is smaller than 7:
@@ -114,10 +148,10 @@ Generate exe for getting key ((*$get\_keys$*)):
 		If not valid match:
 			If more than 10 password inputs made:
 				Delete everything in current directory
+			ask user for password again and repeat process.
 		Else:
-			Decrypt encrypted key using sha256(result)
+			Decrypt encrypted key using sha256(result) as key with chacha algorithm
 			Write decrypted key to file
-
 			
 
 \end{lstlisting}
