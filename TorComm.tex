@@ -77,6 +77,12 @@
 
 \pagenumbering{roman}
 
+\section{Networking}
+
+\subsection{one on one}
+
+\subsection{groupchat}
+
 \section{Cryptography}
 
 The key communication protocol used is Elliptic Cryptography Diffie Hellman ($ECDH$)
@@ -169,6 +175,12 @@ BRAINPOOL512R1\_ECIES\_HMAC\_CHACHA20\_SHA256 & BRAINPOOL512R1\_ECIES\_HMAC\_CHA
 
 \normalsize
 
+\section{Errors}
+
+Everything about errors and error codes are stored in errors.h file. 
+
+networking related errors are stored in $log/network.log$ and other bugs (mainly cryptographic) is stored in $log/errors.log$
+
 \section{Blocking}
 
 \subsection{Algorithm}
@@ -217,8 +229,10 @@ The C++ code is in $security/key.cpp$, but the basic idea is as following:
 
 Generate key, pepper, iv
 Ask user for 4-32 byte password
+# chacha cipher function: chacha(data, key, iv)
 (*$result = pepper \oplus password$*)
-Use sha256(result) as symmetric key to encrypt key using chacha
+# Use sha256(result) as symmetric key to encrypt key using chacha
+encrypted key = chacha(key, sha256(result), iv)
 Store sha256(result) as sha256(sha256(result))
 Generate exe for getting key ((*$get\_keys$*)):
 	Store sha256(sha256(result)), iv, encrypted key, pepper (excluding 3-bytes)
@@ -242,8 +256,12 @@ Generate exe for getting key ((*$get\_keys$*)):
 				Delete everything in current directory
 			ask user for password again and repeat process.
 		Else:
-			Decrypt encrypted key using sha256(result) as key with chacha algorithm
+			# Decrypt encrypted key using sha256(result) as key with chacha algorithm
+			decrypted key = chacha(encrypted key, sha256(result), iv)
+
 			Write decrypted key to file
+
+			set key, pepper, iv, password, and every other array stored in ram to zero
 			
 
 \end{lstlisting}
