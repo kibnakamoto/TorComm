@@ -4,6 +4,7 @@
 #include <string>
 #include <chrono>
 #include <filesystem>
+#include <assert.h>
 
 #include "../../message.h"
 
@@ -55,7 +56,8 @@ int main()
 	std::cout << "speed (test_move): " << test_move(n1, n2).count() << "ns\n";
 
 	// check file:
-	if(get_data(n2) == "hello world!") {
+	bool check_text = get_data(n2) == "hello world!";
+	if(check_text) {
 		std::cout << std::endl << "PASSED - File management (move_file)";
 	} else {
 		passed = false;
@@ -70,7 +72,8 @@ int main()
 	std::cout << "\nspeed (test_move) image: " << test_move(n1, n2).count() << "ns\n";
 
 	// check file:
-	if(get_data(n2) == get_data("original.png")) {
+	bool check_image = get_data(n2) == get_data("original.png");
+	if(check_image) {
 		std::cout << std::endl << "PASSED - Image File management (move_file)";
 	} else {
 		passed = false;
@@ -83,6 +86,10 @@ int main()
 	std::cout << "\nspeed (test_delete): " << test_delete("new.txt").count() << "ns\n";
 	std::cout << "\nspeed (test_delete) image: " << test_delete(n2).count() << "ns\n";
 	std::cout << std::endl << std::endl << "FILE TEST: " << (passed ? "PASSED WHOLE TEST" : "FAILED SOME/ALL");
+
+	assert(check_text);
+	assert(check_image);
+
 	std::cout << std::endl << std::endl << "--------------- END FILE TEST ---------------\n";
 	return 0;
 }

@@ -20,7 +20,7 @@ all: ${OBJS}
 	${CXX} ${CXXFLAGS} $< -c ${FLAGS}
 
 test: ${OBJS}
-	${MAKE}
+	${MAKE} debug
 	${MAKE} -C test
 
 security: ${OBJS}
