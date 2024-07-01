@@ -22,8 +22,8 @@ int main()
 	// 2607:fea8:1f1b:3d00:1201:4751:332c:3de0 - The One
 
 
-	std::string their_ip = "2607:fea8:1f1b:3d00:878:e421:22:a7b";
-	// std::string their_ip = "10.0.0.213";
+	std::string their_ip = "2607:fea8:1f1b:3d00:878:e421:22:a7b"; // test ipv6
+	// std::string their_ip = "10.0.0.213"; // test ipv4
 	Blocked blocked = Blocked("../../../security/keys", "../../../blocked");
 	P2P p2p = P2P(port, blocked);
 	p2p.accept([&p2p, protocol, &key](boost::asio::ip::tcp::socket &socket) mutable {
