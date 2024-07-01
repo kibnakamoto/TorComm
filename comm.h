@@ -19,7 +19,6 @@
 #ifndef COMM_H
 #define COMM_H
 
-#include <cryptopp/strciphr.h>
 #include <stdexcept>
 #include <stdint.h>
 #include <string>
@@ -33,6 +32,7 @@
 
 #include <cryptopp/cryptlib.h>
 #include <cryptopp/aes.h>
+#include <cryptopp/strciphr.h>
 
 #include "message.h"
 #include "errors.h"
@@ -204,7 +204,7 @@ class P2P
         	});
 		}
 
-		// accept connection from specific ip only
+		// accept connection from specific ip only (group-chat)
 		void accept(std::vector<std::string> ips) // TODO: keep up to date with working previous accept function
 		{
         	listener.async_accept([&](boost::system::error_code const& ec, boost::asio::ip::tcp::socket sock) {
@@ -259,7 +259,7 @@ class P2P
 			servers.emplace_back(std::move(*socket));
 			async_connect(*socket, endpoint_, [this, address, port_,
 											   reattempt_after_fail, socket, lambda](boost::system::error_code ec,
-													   						 boost::asio::ip::tcp::endpoint) {
+													   						 		 boost::asio::ip::tcp::endpoint) {
 				if (ec) {
 					std::cout << "Failed Connection " << reattempt_after_fail << " (" << ec.message()
 							  << "): Reconnecting in 3 Seconds..." << std::endl;
