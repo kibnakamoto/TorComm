@@ -153,6 +153,10 @@ int main()
 	assert(decrypted_success);
 	assert(hmac_verified);
 
+	std::ofstream file("../test.txt", std::ios_base::app);
+	file << 2;
+	file.close();
+
 	// 6. Test ECDSA (Not Version 1.0)
 
 	std::cout << std::endl;
