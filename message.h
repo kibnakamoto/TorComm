@@ -136,6 +136,7 @@ namespace Cryptography
 		LAST_CURVE=LAST*5 // not a value
 	};
 
+	// returns the byte size of elliptic curve
 	inline uint8_t get_curve_size(Curves curve)
 	{
 		switch(curve) {
