@@ -49,7 +49,6 @@
  */
 
 /* NOT DONE:
-////////////// TODO: WHEN INCLUDING JSONCPP, CHECK IF IT IS IN JSONCPP or JUST JSON
  * TODO: make all parameters relating to length 64-bit as required by send_full function (cryptography)
  * TODO: define key exchanging for multi peer communication 
  * TODO: When sending the protocol no in P2P::send_two_party_ecdh(), make sure to encrypt the protocol number. the padding can be completely random values (15-bytes). The first byte will be the protocol number. This will make the protocol number private so no one will know it. use the default security protocol ALWAYS for this operation. Make sure to verify with HMAC
