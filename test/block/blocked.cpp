@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cassert>
 #include <utility>
+#include <fstream>
 
 #include <boost/exception/diagnostic_information.hpp>
 
@@ -29,5 +30,9 @@ int main()
 	blocked0 = blocked.is_blocked("0000:0000:0000:0000:0000:0000:0000:0000");
 	assert(!blocked0); // shouldn't be blocked again
 	std::cout << std::endl << "PASSED - BLOCKED CLASS" << std::endl;
+
+	std::ofstream file("../test.txt");
+	file << 1;
+	file.close();
 	return 0;
 }

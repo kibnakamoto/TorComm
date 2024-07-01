@@ -90,6 +90,10 @@ int main()
 	assert(check_text);
 	assert(check_image);
 
+	std::ofstream file("../test.txt", std::ios_base::app);
+	file << 3;
+	file.close();
+
 	std::cout << std::endl << std::endl << "--------------- END FILE TEST ---------------\n";
 	return 0;
 }
