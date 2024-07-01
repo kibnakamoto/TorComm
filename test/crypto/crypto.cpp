@@ -74,7 +74,8 @@ int main()
 	std::cout << "\n\nAlice\'s symmetric Key: " << alice_k;
 	std::cout << "\nBob\'s symmetric Key: " << bob_k;
 
-	if(alice_k == bob_k) {
+	bool gen_key_success = alice_k == bob_k;
+	if(gen_key_success) {
 		std::cout << std::endl << "PASSED - ALICE KEY = BOB KEY";
 	} else {
 		std::cout << std::endl << "FAILED - ALICE KEY != BOB KEY";
@@ -120,7 +121,8 @@ int main()
 	str = reinterpret_cast<char*>(decrypted);
 	std::cout << "\nDecrypted Text: " << str;
 
-	if(str == plaintext) {
+	bool decrypted_success = str == plaintext;
+	if(decrypted_success) {
 		std::cout << std::endl << "PASSED - BOB PLAINTEXT = ALICE PLAINTEXT";
 	} else {
 		std::cout << std::endl << "FAILED - BOB PLAINTEXT != ALICE PLAINTEXT";
@@ -139,11 +141,17 @@ int main()
 	hmac.verify(decrypted, decrypted_len, alice_mac);
 	std::cout << "\nBob HMAC:   " << hex(hmac.get_mac(), protocold.mac_size);
 
-	if(hmac.is_verified()) {
+	bool hmac_verified = hmac.is_verified();
+	if(hmac_verified) {
 		std::cout << std::endl << "PASSED - BOB VERIFIED HMAC";
 	} else {
 		std::cout << std::endl << "FAILED - BOB COULDN\'T VERIFY HMAC";
 	}
+
+	// assert to make sure everything works
+	assert(gen_key_success);
+	assert(decrypted_success);
+	assert(hmac_verified);
 
 	// 6. Test ECDSA (Not Version 1.0)
 
