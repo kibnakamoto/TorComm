@@ -13,20 +13,23 @@ static bool check(char *data, uint32_t n, char check_if)
 int main()
 {
 	// run blocking, cryptography, and file management tests
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-result"
 	system("cd block && ./block");
 	system("cd crypto && ./crypto");
 	system("cd file && ./file");
+#pragma GCC diagnostic pop
 
 	std::ifstream file("test.txt");
 	char data[3];
 	file.read(data, 3);
 	bool one = check(data, 3, '1'), two = check(data, 3, '2'), three = check(data, 3, '3');
 	if(one && two && three) {
-		std::cout << "--- ALL TESTS PASSED SUCCESSFULLY ---";
+		std::cout << "\n--- ALL TESTS PASSED SUCCESSFULLY ---\n";
 	} else {
-		if(!one) std::cout << "FAILED BLOCK TEST";
-		if(!two) std::cout << "FAILED CRYPTO TEST";
-		if(!three) std::cout << "FAILED FILE TEST";
+		if(!one) std::cout << "\nFAILED BLOCK TEST";
+		if(!two) std::cout << "\nFAILED CRYPTO TEST";
+		if(!three) std::cout << "\nFAILED FILE TEST";
 	}
 
 	return 0;
