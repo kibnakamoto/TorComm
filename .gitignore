@@ -26,6 +26,7 @@ test/crypto/crypto
 test/crypto/crypto.o
 security/get_keys
 security/keys
+test/test
 
 # blocked ips
 blocked
