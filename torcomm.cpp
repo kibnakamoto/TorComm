@@ -59,7 +59,7 @@
 
 int main()
 {
-	std::string keys_filename = "keys.txt";
+	std::string keys_filename = "keys";
 	std::string current_path = boost::filesystem::current_path().string();
 	std::string keys_path = current_path + "/security/" + keys_filename;
 	Settings settings;
