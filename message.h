@@ -477,7 +477,8 @@ namespace Cryptography
 
 				static uint8_t *to_uint8_ptr(std::string data)
 				{
-					return reinterpret_cast<uint8_t*>(const_cast<char*>(data.c_str()));
+					const char *data_c = data.c_str();
+					return reinterpret_cast<uint8_t*>(const_cast<char*>(data_c)); // will reinterpret_cast cause endianness problems?
 				}
 
 				static uint8_t *to_uint8_ptr(char *data)
@@ -491,7 +492,7 @@ namespace Cryptography
 				// length: length of data
 				// pad_size: pad_size
 				// Pads the data from left to right. no need to remove padding, just remove the first zero digits
-				char *pad(char *data, std::unsigned_integral auto&length)
+				char *pad(char *data, std::unsigned_integral auto &length)
 				{
 				    char *dat;
 					int8_t pad_size;
