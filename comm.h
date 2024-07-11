@@ -1034,6 +1034,7 @@ class P2P
 		}
 
 		private:
+			// send to everybody
 			void _send(Boost_Buffer_Type auto packet)
 			{
 				// client sends network packet
@@ -1073,6 +1074,7 @@ class P2P
           	});
 		}
 
+		// receive from everybody
 		boost::asio::ip::tcp::socket *_recv(Boost_Buffer_Type auto data)
 		{
 			for(auto &server : servers) {
