@@ -617,8 +617,8 @@ namespace Cryptography
 		// pt: plaintext
 		// pt_len: plaintext length
 		// mac_code: Message Authentecation Code unallocated buffer
-		void generator_init(auto hmacf, uint8_t *pt, uint64_t pt_len);
-		bool verifier_init(auto hmacf, uint8_t *pt, uint64_t len, uint8_t *hmac);
+		void generator_init(auto hmacf, uint8_t *ct, uint64_t ct_len);
+		bool verifier_init(auto hmacf, uint8_t *ct, uint64_t len, uint8_t *hmac);
 
 		public:
 				Hmac(ProtocolData &protocol, uint8_t *key);
@@ -629,9 +629,9 @@ namespace Cryptography
 				bool is_verified();
 
 				// generate the HMAC code
-				void generate(uint8_t *pt, uint64_t len);
+				void generate(uint8_t *ct, uint64_t len);
 
-				bool verify(uint8_t *pt, uint64_t len, uint8_t *hmac);
+				bool verify(uint8_t *ct, uint64_t len, uint8_t *hmac);
 	};
 
 	// TODO: find a way to secure communication protocol by secritizing some aspects of it

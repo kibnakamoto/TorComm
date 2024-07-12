@@ -40,6 +40,7 @@
  * while receving and sending fully, make sure that large files are treated properly, don't read the whole data into a byte array but rather read as partitions into an array. This is for really large files where the ram isn't enough - Dec 30, 2023
  * define key exchanging for 2 peer communication  - Jan 3, 2024
  * Testing Cryptography And everything but networking DONE, started network debugging - Jan 5 2024
+ * SECURITY BUG (SIDE CHANNEL ATTACK) FIXED: HMAC algorithms hmacs plaintext, it should do ciphertext instead. Use encrypt-then-mac (ETM) protocol - Jul 11, 2024
  */
 
 /* FUTURE TODOS: (Not for version 1.0)
@@ -55,6 +56,7 @@
  */
 
 /* MAJOR:
+ * TODO: SECURITY BUG (SIDE CHANNEL ATTACK) DETECTED: identify AEAD algorithms and make sure that hmac/ecdsa isn't used for them. e.g. GCM should use it's own verification algorithm. integrate this into the Verification class
  */
 
 int main()

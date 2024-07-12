@@ -645,15 +645,15 @@ CryptoPP::ECDSA<CryptoPP::ECP, HashAlg> Cryptography::Ecdsa::get_decompressed(ui
 // hmacf: hmac function
 // pt: plaintext
 // pt_len: plaintext length
-void Cryptography::Hmac::generator_init(auto hmacf, uint8_t *pt, uint64_t pt_len)
+void Cryptography::Hmac::generator_init(auto hmacf, uint8_t *ct, uint64_t pt_len)
 {
-	hmacf.CalculateDigest(mac, pt, pt_len);
+	hmacf.CalculateDigest(mac, ct, pt_len);
 }
 
 // mac member has to be initialized before calling
-bool Cryptography::Hmac::verifier_init(auto hmacf, uint8_t *pt, uint64_t len, uint8_t *hmac)
+bool Cryptography::Hmac::verifier_init(auto hmacf, uint8_t *ct, uint64_t len, uint8_t *hmac)
 {
-	hmacf.CalculateDigest(mac, pt, len);
+	hmacf.CalculateDigest(mac, ct, len);
 
     // Compare the calculated HMAC with the expected HMAC
     bool verified = memcmp(mac, hmac, protocol.mac_size) == 0;
@@ -684,14 +684,14 @@ bool Cryptography::Hmac::is_verified()
 }
 
 // generate the HMAC code
-void Cryptography::Hmac::generate(uint8_t *pt, uint64_t len)
+void Cryptography::Hmac::generate(uint8_t *ct, uint64_t len)
 {
 	if(protocol.hash == SHA256) {
 		CryptoPP::HMAC<CryptoPP::SHA256> hmac(key, protocol.key_size);
-		generator_init(hmac, pt, len);
+		generator_init(hmac, ct, len);
 	} else if(protocol.hash == SHA512) {
 		CryptoPP::HMAC<CryptoPP::SHA512> hmac(key, protocol.key_size);
-		generator_init(hmac, pt, len);
+		generator_init(hmac, ct, len);
 	} else {
 		#if DEBUG_MODE
 			throw std::runtime_error("Hmac::generate: HASHING_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
@@ -700,19 +700,19 @@ void Cryptography::Hmac::generate(uint8_t *pt, uint64_t len)
 
 		// default values
 		CryptoPP::HMAC<default_hash> hmac(key, protocol.key_size);
-		generator_init(hmac, pt, len);
+		generator_init(hmac, ct, len);
 	}
 }
 
 // verify the HMAC code
-bool Cryptography::Hmac::verify(uint8_t *pt, uint64_t len, uint8_t *mac_code)
+bool Cryptography::Hmac::verify(uint8_t *ct, uint64_t len, uint8_t *mac_code)
 {
 	if(protocol.hash == SHA256) {
 		CryptoPP::HMAC<CryptoPP::SHA256> hmac(key, protocol.key_size);
-		verified = verifier_init(hmac, pt, len, mac_code);
+		verified = verifier_init(hmac, ct, len, mac_code);
 	} else if(protocol.hash == SHA512) {
 		CryptoPP::HMAC<CryptoPP::SHA512> hmac(key, protocol.key_size);
-		verified = verifier_init(hmac, pt, len, mac_code);
+		verified = verifier_init(hmac, ct, len, mac_code);
 	} else {
 		#if DEBUG_MODE
 			throw std::runtime_error("Hmac::verify: HASHING_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
@@ -721,7 +721,7 @@ bool Cryptography::Hmac::verify(uint8_t *pt, uint64_t len, uint8_t *mac_code)
 
 		// default values
 		CryptoPP::HMAC<default_hash> hmac(key, protocol.key_size);
-		verified = verifier_init(hmac, pt, len, mac_code);
+		verified = verifier_init(hmac, ct, len, mac_code);
 	}
 	return verified;
 }

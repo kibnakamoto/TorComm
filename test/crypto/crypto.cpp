@@ -116,7 +116,10 @@ int main()
 	decipher.decrypt(ct, ct_len, decrypted, decrypted_len);
 	std::cout << "\ndecrypted: " << hex(decrypted, decrypted_len);
 
+	#pragma GCC diagnostic push
+	#pragma GCC diagnostic ignored "-Wunused-variable"
 	uint8_t pad_size = decipher.unpad(decrypted, decrypted_len);
+	#pragma GCC diagnostic pop
 	std::string str;
 	str = reinterpret_cast<char*>(decrypted);
 	std::cout << "\nDecrypted Text: " << str;
@@ -132,13 +135,13 @@ int main()
 	Cryptography::Hmac hmac(protocold, key);
 
 	// Alice generates the hmac
-	hmac.generate(&plain[pad_size], (uint64_t)pt_len-pad_size); // generate hmac for text without padding
+	hmac.generate(ct, ct_len); // generate hmac for text without padding
 	std::cout << "\nAlice HMAC: " << hex(hmac.get_mac(), protocold.mac_size);
 	uint8_t *alice_mac = new uint8_t[protocold.mac_size];
 	memcpy(alice_mac, hmac.get_mac(), protocold.mac_size);
 
 	// Bob verifies the hmac
-	hmac.verify(decrypted, decrypted_len, alice_mac);
+	hmac.verify(ct, ct_len, alice_mac);
 	std::cout << "\nBob HMAC:   " << hex(hmac.get_mac(), protocold.mac_size);
 
 	bool hmac_verified = hmac.is_verified();
