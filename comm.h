@@ -563,7 +563,7 @@ class P2P
 					length = pt_len-data_start_index; // set length of file
 
 					// verify
-					bool verified = hmac.verify(plain, pt_len, data); // verified is saved in hmac
+					bool verified = hmac.verify(&data[security_len], cipher_len, data); // verified is saved in hmac
 					if(verified) { // if correct data, save it
 						std::ofstream file(dat);// add the file data to a file
 						file.write(reinterpret_cast<char*>(&plain[data_start_index]), length);
@@ -584,7 +584,7 @@ class P2P
 					decipher.assign_iv(iv);
 					decipher.decrypt(&data[security_len], cipher_len, plain, pt_len);
 
-					bool verified = hmac.verify(plain, pt_len, data); // verified is saved in hmac
+					bool verified = hmac.verify(&data[security_len], cipher_len, data); // verified is saved in hmac
 					if(!verified) {
 						delete[] plain;
 						delete[] iv;
@@ -616,7 +616,7 @@ class P2P
 						decipher.assign_iv(iv);
 						decipher.decrypt(&data[security_len], packet_len, plain, pt_len);
 						
-						verified = hmac.verify(plain, pt_len, data); // verified is saved in hmac
+						verified = hmac.verify(&data[security_len], packet_len, data); // verified is saved in hmac
 
 						if(!verified)
 							break;
@@ -651,7 +651,7 @@ class P2P
 				dat = reinterpret_cast<char*>(tmp);
 
 				// verify
-				hmac.verify(tmp, pt_len, data); // verified is saved in hmac
+				hmac.verify(&data[security_len], length, data); // verified is saved in hmac
 			}
 
 			delete[] iv;
@@ -804,7 +804,7 @@ class P2P
 					cipher.encrypt(u8data, data_len, &packet[security_len], cipher_len);
 
 					// generate HMAC
-					verifier.generate(u8data, data_len);
+					verifier.generate(&packet[security_len], cipher_len);
 
 					// copy mac and iv
 					memcpy(packet, verifier.get_mac(), protocol.mac_size);
@@ -844,7 +844,7 @@ class P2P
 						cipher.encrypt(u8data, s_size, &packet[security_len], cipher_len);
 	
 						// generate HMAC
-						verifier.generate(u8data, s_size);
+						verifier.generate(&packet[security_len], cipher_len);
 
 						// copy mac and iv
 						memcpy(packet, verifier.get_mac(), protocol.mac_size);
@@ -882,7 +882,7 @@ class P2P
 			cipher.encrypt(reinterpret_cast<uint8_t*>(&dat[0]), length, &packet[security_len], len);
 
 			// generate HMAC
-			verifier.generate(reinterpret_cast<uint8_t*>(&dat[0]), length);
+			verifier.generate(&packet[security_len], len);
 
 			// copy mac and iv
 			memcpy(packet, verifier.get_mac(), protocol.mac_size);
