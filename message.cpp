@@ -36,7 +36,7 @@ std::string Cryptography::decrypt_ip_with_pepper(std::string key_path, uint8_t *
 	CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption decipherf;
 	decipherf.SetKeyWithIV(local_key.keys, local_key.key_len, iv, CryptoPP::AES::BLOCKSIZE);
 	CryptoPP::StreamTransformationFilter filter(decipherf, new CryptoPP::StringSink(ip), CryptoPP::StreamTransformationFilter::NO_PADDING);
-	filter.Put(ct_ip, ct_ip_len>>1);
+	filter.Put(ct_ip, ct_ip_len);
 	filter.MessageEnd();
 
 	// remove padding and pepper
@@ -68,7 +68,7 @@ uint8_t *Cryptography::encrypt_ip_with_pepper(std::string key_path, std::string 
 	memcpy(&in[pad_size], local_key.get_pepper(), local_key.pepper_len); // add pepper
 	memcpy(&in[pad_size+local_key.pepper_len], ip.c_str(), ip_len); // add ip
 	in[0] = pad_size; // first byte of data is length
-	out_len = new_len<<1; // ct len is double pt len
+	out_len = new_len; // ct len is pt len
 	
 	// generate IV
 	CryptoPP::AutoSeededRandomPool rng;
@@ -180,7 +180,7 @@ void Cryptography::ProtocolData::init_cipher_data()
 	// set cipher mode
 	if(communication_protocols[protocol].find("CBC") != std::string::npos) {
 		cipher_mode = CBC;
-		block_size=16;
+		block_size=ct_size;
 	} else if(communication_protocols[protocol].find("GCM") != std::string::npos) {
 		cipher_mode = GCM;
 		block_size=ct_size; // block-size is ciphertext size in gcm-mode
