@@ -531,6 +531,8 @@ class P2P
 			 * before filename length, add a one byte padding length. When writing to a file, only add up to the length - padding_length
 			 */
 
+			/*********************************
+
 			// receive full packet
 			if(type == DATA_FORMAT::_FILE_) {
 				uint8_t *plain;
@@ -658,6 +660,8 @@ class P2P
 			delete[] data;
 
 			return 1;
+
+			*********************************/ // COMMENT UNTIL CRYPTO TEST DONE
 
 			/* received data by manually creating the packets
 			// receive all data based on ciphertext length

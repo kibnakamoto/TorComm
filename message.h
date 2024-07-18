@@ -56,6 +56,7 @@ std::string get_time();
 namespace Cryptography
 {
 	// GLOBAL:
+	// cipher suites
 	// 	 ECDH for key communication
 	// 	 HKDF for key derevation
 	enum CommunicationProtocol {
@@ -66,25 +67,22 @@ namespace Cryptography
 		ECIES_ECDSA_AES192_CBC_SHA512,
 		ECIES_ECDSA_AES128_CBC_SHA256,
 		ECIES_ECDSA_AES128_CBC_SHA512,
-		ECIES_ECDSA_AES256_GCM_SHA256,
-		ECIES_ECDSA_AES256_GCM_SHA512,
-		ECIES_ECDSA_AES192_GCM_SHA256,
-		ECIES_ECDSA_AES192_GCM_SHA512,
-		ECIES_ECDSA_AES128_GCM_SHA256,
-		ECIES_ECDSA_AES128_GCM_SHA512,
 
-		// use HMAC for verification (Only supporting HMAC in Version 1.0)
+		// use GCM for verification
+		ECIES_AES256_GCM_SHA256,
+		ECIES_AES256_GCM_SHA512,
+		ECIES_AES192_GCM_SHA256,
+		ECIES_AES192_GCM_SHA512,
+		ECIES_AES128_GCM_SHA256,
+		ECIES_AES128_GCM_SHA512,
+
+		// use HMAC for verification
 		ECIES_HMAC_AES256_CBC_SHA256,
 		ECIES_HMAC_AES256_CBC_SHA512,
 		ECIES_HMAC_AES192_CBC_SHA256,
 		ECIES_HMAC_AES192_CBC_SHA512,
 		ECIES_HMAC_AES128_CBC_SHA256,
 		ECIES_HMAC_AES128_CBC_SHA512,
-		ECIES_HMAC_AES256_GCM_SHA256,
-		ECIES_HMAC_AES256_GCM_SHA512,
-		ECIES_HMAC_AES192_GCM_SHA256,
-		ECIES_HMAC_AES192_GCM_SHA512,
-		ECIES_HMAC_AES128_GCM_SHA256,
 		ECIES_HMAC_AES128_GCM_SHA512,
 
 		ECIES_ECDSA_CHACHA20_SHA256, // ChaCha20 cipher
@@ -101,24 +99,18 @@ namespace Cryptography
 		"ECIES_ECDSA_AES192_CBC_SHA512",
 		"ECIES_ECDSA_AES128_CBC_SHA256",
 		"ECIES_ECDSA_AES128_CBC_SHA512",
-		"ECIES_ECDSA_AES256_GCM_SHA256",
-		"ECIES_ECDSA_AES256_GCM_SHA512",
-		"ECIES_ECDSA_AES192_GCM_SHA256",
-		"ECIES_ECDSA_AES192_GCM_SHA512",
-		"ECIES_ECDSA_AES128_GCM_SHA256",
-		"ECIES_ECDSA_AES128_GCM_SHA512",
+		"ECIES_AES256_GCM_SHA256",
+		"ECIES_AES256_GCM_SHA512",
+		"ECIES_AES192_GCM_SHA256",
+		"ECIES_AES192_GCM_SHA512",
+		"ECIES_AES128_GCM_SHA256",
+		"ECIES_AES128_GCM_SHA512",
 		"ECIES_HMAC_AES256_CBC_SHA256",
 		"ECIES_HMAC_AES256_CBC_SHA512",
 		"ECIES_HMAC_AES192_CBC_SHA256",
 		"ECIES_HMAC_AES192_CBC_SHA512",
 		"ECIES_HMAC_AES128_CBC_SHA256",
 		"ECIES_HMAC_AES128_CBC_SHA512",
-		"ECIES_HMAC_AES256_GCM_SHA256",
-		"ECIES_HMAC_AES256_GCM_SHA512",
-		"ECIES_HMAC_AES192_GCM_SHA256",
-		"ECIES_HMAC_AES192_GCM_SHA512",
-		"ECIES_HMAC_AES128_GCM_SHA256",
-		"ECIES_HMAC_AES128_GCM_SHA512",
 		"ECIES_ECDSA_CHACHA20_SHA256",
 		"ECIES_ECDSA_CHACHA20_SHA512",
 		"ECIES_HMAC_CHACHA20_SHA256",
@@ -175,7 +167,8 @@ namespace Cryptography
 	enum VerificationAlgorithm
 	{
 		ECDSA,
-		HMAC
+		HMAC,
+		GCM_VERIFICATION // same name as GCM
 	};
 
 	// the default values to assign
@@ -369,7 +362,7 @@ namespace Cryptography
 				CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP> group;
 				CryptoPP::Integer private_key;
 				CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element public_key;
-				uint8_t *key; // established key
+				uint8_t *key=nullptr; // established key
 
 				Key(ProtocolData &protocol);
 
@@ -421,6 +414,8 @@ namespace Cryptography
 		CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption op1; // aes cbc mode
 		CryptoPP::GCM<CryptoPP::AES>::Encryption op2;      // aes gcm mode
 		CryptoPP::ChaCha::Encryption op3;                  // ChaCha20
+		std::string gcm_out;
+		std::string gcm_tag;
 		int8_t selected;
 
 		public:
@@ -441,20 +436,19 @@ namespace Cryptography
 							case 0:
 								{
 								op1.SetKeyWithIV(key, protocol.key_size, iv, protocol.iv_size);
- 								CryptoPP::StreamTransformationFilter filter(op1, new CryptoPP::ArraySink(ct,
-																		    							 ct_len),
-																			CryptoPP::StreamTransformationFilter::NO_PADDING);
- 								filter.Put(pt, ct_len);
- 								filter.MessageEnd();
+								op1.ProcessData(ct, pt, length);
 								break;
 								}
 							case 1:
 								{
 								op2.SetKeyWithIV(key, protocol.key_size, iv, protocol.iv_size);
- 								CryptoPP::AuthenticatedEncryptionFilter filter(op2, new CryptoPP::ArraySink(ct, ct_len),
+ 								CryptoPP::AuthenticatedEncryptionFilter filter(op2, new CryptoPP::StringSink(gcm_out), false, protocol.mac_size, "",
 																		  	   CryptoPP::StreamTransformationFilter::NO_PADDING);
- 								filter.Put(pt, ct_len);
+ 								filter.Put(pt, length);
  								filter.MessageEnd();
+
+								memcpy(ct, to_uint8_ptr(gcm_out), ct_len);
+								gcm_tag = gcm_out.substr(ct_len, protocol.mac_size);
 								break;
 								}
 							case 2:
@@ -462,6 +456,12 @@ namespace Cryptography
  								op3.ProcessData(ct, pt, length);
 								break;
 						}
+				}
+
+				// if gcm, return mac
+				std::string &get_mac_gcm()
+				{
+					return gcm_tag; // now that there is a tag, in decipher function make another fucntionality like this. and make sure the tag is verified 
 				}
 
 				// to convert strings and boost buffers to uint8_t*
@@ -475,10 +475,9 @@ namespace Cryptography
 					return boost::asio::buffer_cast<uint8_t*>(data);
 				}
 
-				static uint8_t *to_uint8_ptr(std::string data)
+				static uint8_t *to_uint8_ptr(std::string &data)
 				{
-					const char *data_c = data.c_str();
-					return reinterpret_cast<uint8_t*>(const_cast<char*>(data_c)); // will reinterpret_cast cause endianness problems?
+				 	return reinterpret_cast<uint8_t*>(const_cast<char*>(data.c_str())); // will reinterpret_cast cause endianness problems?
 				}
 
 				static uint8_t *to_uint8_ptr(char *data)
@@ -496,14 +495,16 @@ namespace Cryptography
 				{
 				    char *dat;
 					int8_t pad_size;
-				    decltype(length) original_length = length;
+				    std::remove_reference_t<decltype(length)> original_length = length;
 					uint8_t mod = length % protocol.block_size;
 				    pad_size = protocol.block_size - mod;
 					if(mod == 0) // if 32-byte unpadded, then pad_size=0, if zero, than dat[length-1] = pad_size would modify the plaintext
 						pad_size += protocol.block_size;
 				    length += pad_size;
+					std::cout << "\nlen:" << original_length << "\n";
 				    dat = new char[length];
 				    memcpy(&dat[pad_size], data, original_length); // for left to right padding
+					memset(&dat[1], 0, pad_size-1); // pad it to avoid memory errors detected in valgrind
 					dat[0] = pad_size;
 				    // memcpy(dat, data, original_length);				  // for right to left padding (append to end of message)
 					// dat[length-1] = pad_size; // last digit of data is length
@@ -521,11 +522,15 @@ namespace Cryptography
 		CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption dec1; // aes cbc mode
 		CryptoPP::GCM<CryptoPP::AES>::Decryption dec2;      // aes gcm mode
 		CryptoPP::ChaCha::Encryption dec3;                  // ChaCha20
+		std::string gcm_tag;
 		int8_t selected;
+		bool verified_gcm;
 
 		public:
 
 			Decipher(ProtocolData &protocol, uint8_t *key);
+
+			Decipher() = default;
 
 			// cipher: output of protocol.get_decipher()
 			// ct: ciphertext
@@ -533,7 +538,7 @@ namespace Cryptography
 			// data: plaintext
 			// length: data length, the send packet length. if 1GB image, it would be IMAGE_BUFFER_SIZE, if last packet. has to be padded to be a multiple of protocol.block_size.
 			// decrypts data, doesn't remove padding
-			void decrypt(uint8_t *ct, uint64_t ct_len, uint8_t *pt, uint64_t length);
+			void decrypt(uint8_t *ct, uint64_t ct_len, uint8_t *pt, uint64_t length, uint8_t *mac);
 
 			// set key with iv
 			void assign_key(uint8_t *key);
@@ -561,6 +566,12 @@ namespace Cryptography
 			
 				return pad_size;
 			}
+
+			// if gcm mode, return if it's verified.
+			bool is_verified_gcm()
+			{
+				return verified_gcm;
+			}
 	};
 
 
@@ -568,23 +579,43 @@ namespace Cryptography
 	class Ecdsa : public ErrorHandling
 	{
 		ProtocolData protocol;
-		Key key;
+		Key *key;
 		CryptoPP::AutoSeededRandomPool prng;
 		std::vector<uint8_t> signature; // only for when signing, when verifying, give the parameter as uint8_t*
+		bool verified;
 
 		// initialize signer
 		void signer_init(auto signer, uint8_t *msg, uint16_t msg_len);
 		
 		public:
 
-		// msg: message as the data segment. If image, msg_len is IMAGE_BUFFER_SIZE
-		// msg_len: length of msg
-		Ecdsa(ProtocolData &protocol, Key key);
+		Ecdsa() = default;
+
+		Ecdsa& operator=(Cryptography::Ecdsa &&other)
+		{
+			this->protocol = other.protocol;
+			this->key = other.key;
+			this->signature = other.signature;
+			this->verified = other.verified;
+			return *this;
+		}
+
+		Ecdsa(ProtocolData &protocol, Key &key);
 
 		// returns signature as a vector
 		// msg: message to sign
 		// msg_len: length of message to sign
 		void sign(uint8_t *msg, uint16_t msg_len);
+
+		std::vector<uint8_t> get_signature()
+		{
+			return signature;
+		}
+
+		bool is_verified()
+		{
+			return verified;
+		}
 
 		// public key is received as bytes. Convert to ECPoint using: Key::reconstruct_point_from_bytes
 		// msg: message to verify
@@ -609,7 +640,7 @@ namespace Cryptography
 	{
 		ProtocolData protocol;
 		uint8_t *key;
-		uint8_t *mac; // output mac
+		uint8_t *mac=nullptr; // output mac
 		bool verified;
 
 		// generator initializer
@@ -623,6 +654,8 @@ namespace Cryptography
 		public:
 				Hmac(ProtocolData &protocol, uint8_t *key);
 
+				Hmac() = default;
+
 				~Hmac();
 
 				uint8_t *get_mac();
@@ -632,6 +665,76 @@ namespace Cryptography
 				void generate(uint8_t *ct, uint64_t len);
 
 				bool verify(uint8_t *ct, uint64_t len, uint8_t *hmac);
+	};
+
+	class Verifier
+	{
+		ProtocolData protocol;
+		Hmac hmac;
+		Ecdsa ecdsa;
+		Decipher *decipher;
+		bool verified;
+		uint8_t *mac; // not allocated here
+
+		public:
+				
+				// give Cipher object if goal is generation, give decipher object if goal is verification
+				// Cipher and decipher object is only required for GCM mode.
+				Verifier(ProtocolData &protocol, Key &key, Cipher *cipher=nullptr, Decipher *decipher=nullptr)
+				{
+					this->protocol = protocol;
+
+					if (protocol.verifier == HMAC) {
+						hmac = Hmac(protocol, key.key);
+					} else if (protocol.verifier == ECDSA) {
+						ecdsa = Ecdsa(protocol, key);
+					} else { // GCM
+						mac = Cipher::to_uint8_ptr(cipher->get_mac_gcm()); // already generated
+						this->decipher = decipher;
+						#if DEBUG_MODE
+							if(decipher == nullptr) {
+								throw std::runtime_error("Verifier::Verifier: DECIPHER NULL error. In GCM mode, decipher object has to be non-nullptr");
+							}
+						#endif
+					}
+				}
+
+				void generate(uint8_t *ct=nullptr, uint64_t ct_len=0, uint8_t *pt=nullptr, uint64_t pt_len=0)
+				{
+					if (protocol.verifier == HMAC) {
+						hmac.generate(ct, ct_len); // hmac ciphertext
+						mac = hmac.get_mac();
+					} else if (protocol.verifier == ECDSA) {
+						ecdsa.sign(pt, pt_len); // sign plaintext
+						mac = ecdsa.get_signature().data();
+					}
+					// GCM generation not needed
+				}
+
+				// mac: mac can be ecdsa signature or hmac depending on which is used
+				void verify(uint8_t *ct=nullptr, uint64_t ct_len=0, uint8_t *pt=nullptr, uint64_t pt_len=0,
+							uint8_t *mac=nullptr, CryptoPP::ECPPoint *public_key=nullptr)
+				{
+					if (protocol.verifier == HMAC) {
+						hmac.verify(ct, ct_len, mac);
+						verified = hmac.is_verified();
+					} else if (protocol.verifier == ECDSA) {
+						ecdsa.verify(pt, pt_len, mac, protocol.mac_size, *public_key);
+						verified = ecdsa.is_verified();
+					} else { // GCM
+						verified = decipher->is_verified_gcm();
+					} 
+				}
+
+				bool is_verified()
+				{
+					return verified;
+				}
+
+				uint8_t *get_mac()
+				{
+					return mac;
+				}
 	};
 
 	// TODO: find a way to secure communication protocol by secritizing some aspects of it
