@@ -578,7 +578,7 @@ namespace Cryptography
 	class Ecdsa : public ErrorHandling
 	{
 		ProtocolData protocol;
-		Key *key;
+		Key *key=nullptr;
 		CryptoPP::AutoSeededRandomPool prng;
 		std::vector<uint8_t> signature; // only for when signing, when verifying, give the parameter as uint8_t*
 		bool verified;
@@ -669,8 +669,8 @@ namespace Cryptography
 	class Verifier
 	{
 		ProtocolData protocol;
-		Hmac hmac;
-		Ecdsa ecdsa;
+		Hmac *hmac=nullptr;
+		Ecdsa *ecdsa=nullptr;
 		Decipher *decipher;
 		bool verified;
 		uint8_t *mac; // not allocated here
@@ -679,14 +679,12 @@ namespace Cryptography
 				
 				// give Cipher object if goal is generation, give decipher object if goal is verification
 				// Cipher and decipher object is only required for GCM mode.
-				Verifier(ProtocolData &protocol, Key &key, Cipher *cipher=nullptr, Decipher *decipher=nullptr)
+				Verifier(ProtocolData &protocol, Key &key, Cipher *cipher=nullptr, Decipher *decipher=nullptr) : protocol(protocol)
 				{
-					this->protocol = protocol;
-
 					if (protocol.verifier == HMAC) {
-						hmac = Hmac(protocol, key.key);
+						hmac = new Hmac(protocol, key.key);
 					} else if (protocol.verifier == ECDSA) {
-						ecdsa = Ecdsa(protocol, key);
+						ecdsa = new Ecdsa(protocol, key);
 					} else { // GCM
 						mac = Cipher::to_uint8_ptr(cipher->get_mac_gcm()); // already generated
 						this->decipher = decipher;
@@ -698,14 +696,25 @@ namespace Cryptography
 					}
 				}
 
+				Verifier() = default;
+
+				~Verifier()
+				{
+					if(hmac != nullptr)
+						delete hmac;
+					
+					if(ecdsa != nullptr)
+						delete ecdsa;
+				}
+
 				void generate(uint8_t *ct=nullptr, uint64_t ct_len=0, uint8_t *pt=nullptr, uint64_t pt_len=0)
 				{
 					if (protocol.verifier == HMAC) {
-						hmac.generate(ct, ct_len); // hmac ciphertext
-						mac = hmac.get_mac();
+						hmac->generate(ct, ct_len); // hmac ciphertext
+						mac = hmac->get_mac();
 					} else if (protocol.verifier == ECDSA) {
-						ecdsa.sign(pt, pt_len); // sign plaintext
-						mac = ecdsa.get_signature().data();
+						ecdsa->sign(pt, pt_len); // sign plaintext
+						mac = ecdsa->get_signature().data();
 					}
 					// GCM generation not needed
 				}
@@ -715,11 +724,11 @@ namespace Cryptography
 							uint8_t *mac=nullptr, CryptoPP::ECPPoint *public_key=nullptr)
 				{
 					if (protocol.verifier == HMAC) {
-						hmac.verify(ct, ct_len, mac);
-						verified = hmac.is_verified();
+						hmac->verify(ct, ct_len, mac);
+						verified = hmac->is_verified();
 					} else if (protocol.verifier == ECDSA) {
-						ecdsa.verify(pt, pt_len, mac, protocol.mac_size, *public_key);
-						verified = ecdsa.is_verified();
+						ecdsa->verify(pt, pt_len, mac, protocol.mac_size, *public_key);
+						verified = ecdsa->is_verified();
 					} else { // GCM
 						verified = decipher->is_verified_gcm();
 					} 

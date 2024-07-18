@@ -116,7 +116,6 @@ class Blocked
 		// destructor
 		~Blocked();
 		
-
 		// block a new ip
 		void block(std::string ip);
 
@@ -150,6 +149,7 @@ class P2P
 		boost::asio::ip::tcp::resolver::results_type endpoints;
 		std::string ip; // get ip of this device
 		Blocked blocked;
+		std::map<std::string, CryptoPP::ECPPoint *> public_keys; // public keys of peers. ip address is used to access public key
 		// inline static uint32_t max_requests = 10; // the total amount of receive requests that can be made before quitting
 
 		public:
@@ -325,6 +325,9 @@ class P2P
 
 			// use their keys
 			CryptoPP::ECPPoint public_bob = Cryptography::Key::reconstruct_point_from_bytes(packet, xy_len, &packet[xy_len], xy_len);
+
+			public_keys.insert({recv_from->remote_endpoint().address().to_string(), &public_bob});
+
 			auto shared_secret = key.multiply(public_bob);
 			uint16_t shared_secret_len = shared_secret.x.MinEncodedSize();
 			shared_secret.x.Encode(&packet[0], shared_secret_len, CryptoPP::Integer::UNSIGNED); // add the data to an array (used packet since it's already allocated)
@@ -369,6 +372,8 @@ class P2P
 
 			protocol.init(packet[0]); // re-initialize protocol
 			CryptoPP::ECPPoint public_alice = key.reconstruct_point_from_bytes(&packet[1], xy_len, &packet[xy_len+1], xy_len);
+
+			public_keys.insert({recv_from.remote_endpoint().address().to_string(), &public_alice});
 
 			// save public key to packet
 			key.public_key.x.Encode(&packet[0], xy_len, CryptoPP::Integer::UNSIGNED);
@@ -513,7 +518,7 @@ class P2P
 		// RUN this function using another thread, this means there are 3 threads for communiciation, 2 for receiver, 1 for sender.
 		bool recv_full(std::string dat, uint64_t &length, DATA_FORMAT &type,
 					   boost::asio::ip::tcp::socket *received_from, Cryptography::ProtocolData &protocol,
-					   Cryptography::Decipher decipher, auto got_decipher, Cryptography::Hmac hmac, std::string file_path="")
+					   Cryptography::Decipher decipher, auto got_decipher, Cryptography::Verifier verifier, std::string file_path="")
 		{
 			// first receive genesis packet
 			uint8_t type_;
@@ -531,7 +536,6 @@ class P2P
 			 * before filename length, add a one byte padding length. When writing to a file, only add up to the length - padding_length
 			 */
 
-			/*********************************
 
 			// receive full packet
 			if(type == DATA_FORMAT::_FILE_) {
@@ -552,7 +556,7 @@ class P2P
 
 					// decrypt
 					decipher.assign_iv(iv);
-					decipher.decrypt(&data[security_len], cipher_len, plain, pt_len);
+					decipher.decrypt(&data[security_len], cipher_len, plain, pt_len, data);
 
 					// get file name and padding
 					uint16_t file_name_len;
@@ -565,7 +569,8 @@ class P2P
 					length = pt_len-data_start_index; // set length of file
 
 					// verify
-					bool verified = hmac.verify(&data[security_len], cipher_len, data); // verified is saved in hmac
+					bool verified = verifier.verify(&data[security_len], cipher_len, plain, pt_len, data,
+													public_keys.at(received_from->remote_endpoint().address().to_string())); // verified is saved in verifier
 					if(verified) { // if correct data, save it
 						std::ofstream file(dat);// add the file data to a file
 						file.write(reinterpret_cast<char*>(&plain[data_start_index]), length);
@@ -584,9 +589,10 @@ class P2P
 					// decrypt
 					pt_len = type;
 					decipher.assign_iv(iv);
-					decipher.decrypt(&data[security_len], cipher_len, plain, pt_len);
+					decipher.decrypt(&data[security_len], cipher_len, plain, pt_len, data);
 
-					bool verified = hmac.verify(&data[security_len], cipher_len, data); // verified is saved in hmac
+					bool verified = verifier.verify(&data[security_len], cipher_len, plain, pt_len, data,
+													public_keys.at(received_from->remote_endpoint().address().to_string())); // verified is saved in verifier
 					if(!verified) {
 						delete[] plain;
 						delete[] iv;
@@ -616,9 +622,11 @@ class P2P
 
 						// decrypt
 						decipher.assign_iv(iv);
-						decipher.decrypt(&data[security_len], packet_len, plain, pt_len);
+						decipher.decrypt(&data[security_len], packet_len, plain, pt_len, data);
 						
-						verified = hmac.verify(&data[security_len], packet_len, data); // verified is saved in hmac
+						// verify
+						verified = verifier.verify(&data[security_len], packet_len, plain, pt_len, data,
+												   public_keys.at(received_from->remote_endpoint().address().to_string())); // verified is saved in verifier
 
 						if(!verified)
 							break;
@@ -645,7 +653,7 @@ class P2P
 				// decrypt
 				uint8_t *tmp = new uint8_t[pt_len];
 				decipher.assign_iv(iv);
-				decipher.decrypt(&data[security_len], length, tmp, pt_len);
+				decipher.decrypt(&data[security_len], length, tmp, pt_len, data);
 				length = pt_len; // set length of dat
 
 				// remove padding
@@ -653,15 +661,14 @@ class P2P
 				dat = reinterpret_cast<char*>(tmp);
 
 				// verify
-				hmac.verify(&data[security_len], length, data); // verified is saved in hmac
+				verifier.verify(&data[security_len], length, tmp, pt_len, data,
+								public_keys.at(received_from->remote_endpoint().address().to_string())); // verified is saved in verifier
 			}
 
 			delete[] iv;
 			delete[] data;
 
 			return 1;
-
-			*********************************/ // COMMENT UNTIL CRYPTO TEST DONE
 
 			/* received data by manually creating the packets
 			// receive all data based on ciphertext length
@@ -750,10 +757,10 @@ class P2P
 		// 	length: length of data
 		// 	type: type of message
 		// 	got_cipher: cipher.get_cipher();
-		// 	verifier: hmac/ecdsa, *******ONLY SUPPORTS HMAC FOR NOW*******
+		// 	verifier: hmac/ecdsa/GCM
 		void send_full(std::string dat, DATA_FORMAT type,
 					   Cryptography::ProtocolData &protocol,
-					   Cryptography::Cipher &cipher, Cryptography::Hmac verifier)
+					   Cryptography::Cipher &cipher, Cryptography::Verifier verifier)
 		{
 			uint64_t length = dat.length();
 			const uint16_t security_len = protocol.mac_size + protocol.iv_size;
@@ -807,8 +814,8 @@ class P2P
 					cipher.assign_iv(iv);
 					cipher.encrypt(u8data, data_len, &packet[security_len], cipher_len);
 
-					// generate HMAC
-					verifier.generate(&packet[security_len], cipher_len);
+					// generate MAC
+					verifier.generate(&packet[security_len], cipher_len, u8data, data_len);
 
 					// copy mac and iv
 					memcpy(packet, verifier.get_mac(), protocol.mac_size);
@@ -848,7 +855,7 @@ class P2P
 						cipher.encrypt(u8data, s_size, &packet[security_len], cipher_len);
 	
 						// generate HMAC
-						verifier.generate(&packet[security_len], cipher_len);
+						verifier.generate(&packet[security_len], cipher_len, u8data, s_size);
 
 						// copy mac and iv
 						memcpy(packet, verifier.get_mac(), protocol.mac_size);
@@ -886,7 +893,7 @@ class P2P
 			cipher.encrypt(reinterpret_cast<uint8_t*>(&dat[0]), length, &packet[security_len], len);
 
 			// generate HMAC
-			verifier.generate(&packet[security_len], len);
+			verifier.generate(&packet[security_len], len, reinterpret_cast<uint8_t*>(&dat[0]), length);
 
 			// copy mac and iv
 			memcpy(packet, verifier.get_mac(), protocol.mac_size);
