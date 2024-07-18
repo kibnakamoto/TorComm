@@ -576,16 +576,16 @@ void Cryptography::Ecdsa::signer_init(auto signer, uint8_t *msg, uint16_t msg_le
 {
 	signer.AccessKey().Initialize(protocol.curve_oid, key->private_key);
 	CryptoPP::StringSource s(msg, msg_len, true,
-    						 new CryptoPP::SignerFilter(Cryptography::Ecdsa::prng,
+    						 new CryptoPP::SignerFilter(prng,
 									 		  			signer,
 											  			new CryptoPP::VectorSink(signature)));
 }
 
 // msg: message as the data segment. If image, msg_len is IMAGE_BUFFER_SIZE
 // msg_len: length of msg
-Cryptography::Ecdsa::Ecdsa(ProtocolData &protocol, Key &key) : protocol(protocol)
+Cryptography::Ecdsa::Ecdsa(ProtocolData &protocol, Key &key) : protocol(protocol), key(&key)
 {
-	*this->key = key;
+	//*this->key = key;
 }
 
 // returns signature as a vector
