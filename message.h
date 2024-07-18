@@ -218,7 +218,7 @@ namespace Cryptography
 			memset(obj, 0xff, file_size); // set to ones, not zeros, because zeros might not write, because there might be optimizations around writing zeros.
 			file.close();
 			file.open(src_path, std::fstream::out | std::fstream::trunc);
-			file << (const char*)obj; // set all bits
+			file.write(obj, file_size);
 			file.close();
 			std::filesystem::remove(src_file); // delete file
 			
@@ -260,7 +260,7 @@ namespace Cryptography
 
 			file.close();
 			file.open(path, std::fstream::out | std::fstream::trunc);
-			file << (const char*)obj;
+			file.write(obj, file_size);
 			file.close();
 			std::filesystem::remove(path); // delete file
 
