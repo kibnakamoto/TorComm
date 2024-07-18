@@ -388,7 +388,7 @@ namespace Cryptography
 						 CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP>::Element b_public_k);
 
 				// Hash based key deravation function
-				void hkdf(uint8_t * password, uint16_t password_len, uint8_t *salt, uint16_t salt_len, uint8_t *info, uint16_t info_len);
+				void hkdf(uint8_t *password, uint16_t password_len, uint8_t *salt, uint16_t salt_len, uint8_t *info, uint16_t info_len);
 	};
 
 	namespace /* INTERNAL NAMESPACE */
@@ -501,7 +501,6 @@ namespace Cryptography
 					if(mod == 0) // if 32-byte unpadded, then pad_size=0, if zero, than dat[length-1] = pad_size would modify the plaintext
 						pad_size += protocol.block_size;
 				    length += pad_size;
-					std::cout << "\nlen:" << original_length << "\n";
 				    dat = new char[length];
 				    memcpy(&dat[pad_size], data, original_length); // for left to right padding
 					memset(&dat[1], 0, pad_size-1); // pad it to avoid memory errors detected in valgrind
