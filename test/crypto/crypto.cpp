@@ -32,7 +32,8 @@ int main()
 {
 	// 1. Test ProtocolData
 	Cryptography::Curves curve = Cryptography::SECP256K1;
-	Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_HMAC_AES256_CBC_SHA512;
+	Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_AES256_GCM_SHA512;
+	//Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_ECDSA_AES128_CBC_SHA512;
 	uint8_t protocol = (uint8_t)comm_protocol + curve;
 	std::cout << std::endl << "protocol number: " << protocol+0 << std::endl;
 	Cryptography::ProtocolData protocold(protocol); // initialize
@@ -100,7 +101,7 @@ int main()
 	std::cout << "\niv: " << hex(iv, protocold.iv_size);
 	
 	// encrypt
-	uint32_t ct_len = pt_len<<(protocold.ct_size/protocold.block_size-1);
+	uint64_t ct_len = pt_len<<(protocold.ct_size/protocold.block_size-1);
 	uint8_t *ct = new uint8_t[ct_len];
 	auto cipherf = protocold.get_cipher();
 	cipher.assign_iv(iv);
@@ -110,18 +111,21 @@ int main()
 
 	// 4. Test Decipher
 	Cryptography::Decipher decipher(protocold, key);
+	Cryptography::Verifier verifier(protocold, bob_key, &cipher, &decipher);
+
+	// Alice generates mac/signature/tag
+	verifier.generate(ct, ct_len, plain, pt_len);
 	decipher.assign_iv(iv);
-	uint32_t decrypted_len = ct_len>>(protocold.ct_size/protocold.block_size-1);
+	uint64_t decrypted_len = ct_len>>(protocold.ct_size/protocold.block_size-1);
 	uint8_t *decrypted = new uint8_t[decrypted_len];
-	decipher.decrypt(ct, ct_len, decrypted, decrypted_len);
+	decipher.decrypt(ct, ct_len, decrypted, decrypted_len, verifier.get_mac());
 	std::cout << "\ndecrypted: " << hex(decrypted, decrypted_len);
 
 	#pragma GCC diagnostic push
 	#pragma GCC diagnostic ignored "-Wunused-variable"
 	uint8_t pad_size = decipher.unpad(decrypted, decrypted_len);
 	#pragma GCC diagnostic pop
-	std::string str;
-	str = reinterpret_cast<char*>(decrypted);
+	std::string str(reinterpret_cast<char*>(decrypted), decrypted_len);
 	std::cout << "\nDecrypted Text: " << str;
 
 	bool decrypted_success = str == plaintext;
@@ -131,21 +135,15 @@ int main()
 		std::cout << std::endl << "FAILED - BOB PLAINTEXT != ALICE PLAINTEXT";
 	}
 
-	// 5. Test HMAC
-	Cryptography::Hmac hmac(protocold, key);
-
-	// Alice generates the hmac
-	hmac.generate(ct, ct_len); // generate hmac for text without padding
-	std::cout << "\nAlice HMAC: " << hex(hmac.get_mac(), protocold.mac_size);
+	// 5. Test VERIFICATION
+	std::cout << "\nAlice Mac: " << hex(verifier.get_mac(), protocold.mac_size);
 	uint8_t *alice_mac = new uint8_t[protocold.mac_size];
-	memcpy(alice_mac, hmac.get_mac(), protocold.mac_size);
+	memcpy(alice_mac, verifier.get_mac(), protocold.mac_size);
 
-	// Bob verifies the hmac
-	hmac.verify(ct, ct_len, alice_mac);
-	std::cout << "\nBob HMAC:   " << hex(hmac.get_mac(), protocold.mac_size);
-
-	bool hmac_verified = hmac.is_verified();
-	if(hmac_verified) {
+	// bob verifies the mac
+	verifier.verify(ct, ct_len, decrypted, decrypted_len, alice_mac, &alice_key.public_key);
+	bool mac_verified = verifier.is_verified();
+	if(mac_verified) {
 		std::cout << std::endl << "PASSED - BOB VERIFIED HMAC";
 	} else {
 		std::cout << std::endl << "FAILED - BOB COULDN\'T VERIFY HMAC";
@@ -154,7 +152,7 @@ int main()
 	// assert to make sure everything works
 	assert(gen_key_success);
 	assert(decrypted_success);
-	assert(hmac_verified);
+	assert(mac_verified);
 
 	std::ofstream file("../test.txt", std::ios_base::app);
 	file << 2;

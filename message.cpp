@@ -33,7 +33,6 @@ std::string Cryptography::decrypt_ip_with_pepper(std::string key_path, uint8_t *
 {
 	std::string ip;
 	LocalKeys local_key(key_path); // get local key parameters like key and length
-	
 	CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption decipherf;
 	decipherf.SetKeyWithIV(local_key.keys, local_key.key_len, iv, CryptoPP::AES::BLOCKSIZE);
 	CryptoPP::StreamTransformationFilter filter(decipherf, new CryptoPP::StringSink(ip), CryptoPP::StreamTransformationFilter::NO_PADDING);
@@ -43,7 +42,7 @@ std::string Cryptography::decrypt_ip_with_pepper(std::string key_path, uint8_t *
 	// remove padding and pepper
 	// ip[0] is pad size
 	ip = ip.erase(0, ip[0]+local_key.pepper_len);
-	
+
 	return ip;
 }
 
@@ -79,9 +78,7 @@ uint8_t *Cryptography::encrypt_ip_with_pepper(std::string key_path, std::string 
 	uint8_t *out = new uint8_t[out_len];
 	CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption cipherf;
 	cipherf.SetKeyWithIV(local_key.keys, local_key.key_len, iv, CryptoPP::AES::BLOCKSIZE);
-	CryptoPP::StreamTransformationFilter filter(cipherf, new CryptoPP::ArraySink(out, out_len), CryptoPP::StreamTransformationFilter::NO_PADDING);
-	filter.Put(in, out_len); // TODO: WHY AND HOW IS IT OUT_LEN? IT SHOULD BE NEW_LEN BUT THAT ONLY USES HALF OF OUT. HOW?
-	filter.MessageEnd();
+	cipherf.ProcessData(out, in, new_len);
 	delete[] in;
 	return out;
 }
@@ -104,8 +101,10 @@ void Cryptography::ProtocolData::init(uint8_t protocol_no)
 	// initialize verification algorithm data
 	if(communication_protocols[protocol].find("ECDSA") != std::string::npos) {
 		verifier = ECDSA;
-	} if(communication_protocols[protocol].find("HMAC") != std::string::npos) {
+	} else if(communication_protocols[protocol].find("HMAC") != std::string::npos) {
 		verifier = HMAC;
+	} else if (communication_protocols[protocol].find("GCM") != std::string::npos) {
+		verifier = GCM_VERIFICATION;
 	} else {
 		#if DEBUG_MODE
 			throw std::runtime_error("ProtocolData::init: VERIFICATION_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
@@ -161,17 +160,14 @@ void Cryptography::ProtocolData::init_cipher_data()
 		iv_size = 16;
 		cipher = AES256;
 		key_size = 32;
-		block_size = 16;
 	} else if (communication_protocols[protocol].find("AES192") != std::string::npos) {
 		iv_size = 16;
 		cipher = AES192;
 		key_size = 24;
-		block_size = 16;
 	} else if (communication_protocols[protocol].find("AES128") != std::string::npos) {
 		iv_size = 16;
 		cipher = AES128;
 		key_size = 16;
-		block_size = 16;
 	} else if (communication_protocols[protocol].find("CHACHA20") != std::string::npos) {
 		iv_size = 8;
 		cipher = CHACHA20;
@@ -184,8 +180,10 @@ void Cryptography::ProtocolData::init_cipher_data()
 	// set cipher mode
 	if(communication_protocols[protocol].find("CBC") != std::string::npos) {
 		cipher_mode = CBC;
+		block_size=16;
 	} else if(communication_protocols[protocol].find("GCM") != std::string::npos) {
 		cipher_mode = GCM;
+		block_size=ct_size; // block-size is ciphertext size in gcm-mode
 	} else { // e.g. CHACHA20, no cipher mode
 		cipher_mode = NO_MODE;
 	}
@@ -198,11 +196,24 @@ void Cryptography::ProtocolData::init_hash_data()
 	if(communication_protocols[protocol].find("SHA256") != std::string::npos) {
 		hash = SHA256;
 		hashf = CryptoPP::SHA256();
-		mac_size = 32;
+
+		if(verifier == HMAC)
+			mac_size = 32;
+		else if(verifier == ECDSA)
+			mac_size = get_curve_size(curve)<<1;
+		else {
+			mac_size = 16;
+		}
 	} else if(communication_protocols[protocol].find("SHA512") != std::string::npos) {
 		hash = SHA512;
 		hashf = CryptoPP::SHA512();
-		mac_size = 64;
+		if(verifier == HMAC)
+			mac_size = 64;
+		else if(verifier == ECDSA)
+			mac_size = get_curve_size(curve)<<1;
+		else {
+			mac_size = 16;
+		}
 	} else {
 		error = HASHING_ALGORITHM_NOT_FOUND;
 		mac_size = default_mac_size;
@@ -358,7 +369,9 @@ Cryptography::Key::Key(ProtocolData &protocol) : protocol(protocol)
 
 Cryptography::Key::~Key()
 {
-	delete[] key;
+	if(key != nullptr) {
+		delete[] key;
+	}
 }
 
 // convert public key to uint8_t*
@@ -504,24 +517,40 @@ Cryptography::Decipher::Decipher(ProtocolData &protocol, uint8_t *key) : protoco
 // ct_len: ciphertext length
 // pt: plaintext
 // length: pt length
+// mac: only matters if AEAD algoritm (GCM)
 // decrypts data, doesn't remove padding
-void Cryptography::Decipher::decrypt(uint8_t *ct, uint64_t ct_len, uint8_t *pt, uint64_t length)
+void Cryptography::Decipher::decrypt(uint8_t *ct, uint64_t ct_len, uint8_t *pt, uint64_t length, uint8_t *mac)
 {
 	switch(selected) {
 		case 0:
 			{
 				dec1.SetKeyWithIV(key, protocol.key_size, iv, protocol.iv_size);
-				CryptoPP::StreamTransformationFilter filter(dec1, new CryptoPP::ArraySink(pt, length), CryptoPP::StreamTransformationFilter::NO_PADDING);
-				filter.Put(ct, ct_len);
-				filter.MessageEnd();
+				dec1.ProcessData(pt, ct, length);
+				// CryptoPP::StreamTransformationFilter filter(dec1, new CryptoPP::ArraySink(pt, length), CryptoPP::StreamTransformationFilter::NO_PADDING);
+				// filter.Put(ct, ct_len);
+				// filter.MessageEnd();
 			}
 			break;
 		case 1:
 			{
 				dec2.SetKeyWithIV(key, protocol.key_size, iv, protocol.iv_size);
-				CryptoPP::AuthenticatedDecryptionFilter filter(dec2, new CryptoPP::ArraySink(pt, length), CryptoPP::StreamTransformationFilter::NO_PADDING);
-				filter.Put(ct, ct_len);
-				filter.MessageEnd();
+				CryptoPP::AuthenticatedDecryptionFilter df(dec2, new CryptoPP::ArraySink(pt, length),
+														   CryptoPP::AuthenticatedDecryptionFilter::MAC_AT_BEGIN,
+														   protocol.mac_size,
+														   CryptoPP::StreamTransformationFilter::NO_PADDING);
+			    df.ChannelPut(CryptoPP::DEFAULT_CHANNEL, mac, protocol.mac_size);
+			    df.ChannelPut(CryptoPP::AAD_CHANNEL, (const uint8_t*)"", 0);
+			    df.ChannelPut(CryptoPP::DEFAULT_CHANNEL, ct, ct_len);
+			    df.ChannelMessageEnd(CryptoPP::AAD_CHANNEL);
+			    df.ChannelMessageEnd(CryptoPP::DEFAULT_CHANNEL);
+				verified_gcm = df.GetLastResult();
+
+				// CryptoPP::AuthenticatedDecryptionFilter filter(dec2, new CryptoPP::ArraySink(pt, length),
+				// 											   CryptoPP::AuthenticatedDecryptionFilter::MAC_AT_BEGIN,
+				// 											   protocol.mac_size, CryptoPP::StreamTransformationFilter::NO_PADDING);
+
+				// filter.Put(ct, ct_len);
+				// filter.MessageEnd();
 			}
 			break;
 		case 2:
@@ -545,16 +574,19 @@ void Cryptography::Decipher::assign_key(uint8_t *key)
 
 void Cryptography::Ecdsa::signer_init(auto signer, uint8_t *msg, uint16_t msg_len)
 {
-	signer.AccessKey().Initialize(protocol.curve_oid, key.private_key);
+	signer.AccessKey().Initialize(protocol.curve_oid, key->private_key);
 	CryptoPP::StringSource s(msg, msg_len, true,
-    						 new CryptoPP::SignerFilter(prng,
+    						 new CryptoPP::SignerFilter(Cryptography::Ecdsa::prng,
 									 		  			signer,
 											  			new CryptoPP::VectorSink(signature)));
 }
 
 // msg: message as the data segment. If image, msg_len is IMAGE_BUFFER_SIZE
 // msg_len: length of msg
-// Cryptography::Ecdsa::Ecdsa(ProtocolData &protocol, Key key) : protocol(protocol), key(key) {}
+Cryptography::Ecdsa::Ecdsa(ProtocolData &protocol, Key &key) : protocol(protocol)
+{
+	*this->key = key;
+}
 
 // returns signature as a vector
 // msg: message to sign
@@ -611,6 +643,7 @@ bool Cryptography::Ecdsa::verify(uint8_t *msg, uint16_t msg_len, uint8_t *&signa
 		CryptoPP::ECDSA<CryptoPP::ECP, default_hash>::Verifier verifier(public_k);
 		verified = verifier.VerifyMessage(&msg[0], msg_len, &signature[0], signature_len); // ecdsa message verification
 	}
+	this->verified = verified;
 
 	return verified;
 }
@@ -668,7 +701,9 @@ Cryptography::Hmac::Hmac(ProtocolData &protocol, uint8_t *key) : protocol(protoc
 
 Cryptography::Hmac::~Hmac()
 {
-	delete[] mac;
+	if(mac != nullptr) {
+		delete[] mac;
+	}
 }
 
 // get mac
@@ -732,3 +767,4 @@ std::string get_time()
     std::time_t end_time = std::chrono::system_clock::to_time_t(time);
 	return std::ctime(&end_time);
 }
+

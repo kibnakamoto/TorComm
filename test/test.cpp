@@ -30,6 +30,7 @@ int main()
 		if(!one) std::cout << "\nFAILED BLOCK TEST";
 		if(!two) std::cout << "\nFAILED CRYPTO TEST";
 		if(!three) std::cout << "\nFAILED FILE TEST";
+		std::cout << std::endl;
 	}
 
 	return 0;
