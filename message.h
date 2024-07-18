@@ -679,70 +679,21 @@ namespace Cryptography
 				
 				// give Cipher object if goal is generation, give decipher object if goal is verification
 				// Cipher and decipher object is only required for GCM mode.
-				Verifier(ProtocolData &protocol, Key &key, Cipher *cipher=nullptr, Decipher *decipher=nullptr) : protocol(protocol)
-				{
-					if (protocol.verifier == HMAC) {
-						hmac = new Hmac(protocol, key.key);
-					} else if (protocol.verifier == ECDSA) {
-						ecdsa = new Ecdsa(protocol, key);
-					} else { // GCM
-						mac = Cipher::to_uint8_ptr(cipher->get_mac_gcm()); // already generated
-						this->decipher = decipher;
-						#if DEBUG_MODE
-							if(decipher == nullptr) {
-								throw std::runtime_error("Verifier::Verifier: DECIPHER NULL error. In GCM mode, decipher object has to be non-nullptr");
-							}
-						#endif
-					}
-				}
+				Verifier(ProtocolData &protocol, Key &key, Cipher *cipher, Decipher *decipher);
 
 				Verifier() = default;
 
-				~Verifier()
-				{
-					if(hmac != nullptr)
-						delete hmac;
-					
-					if(ecdsa != nullptr)
-						delete ecdsa;
-				}
+				~Verifier();
 
-				void generate(uint8_t *ct=nullptr, uint64_t ct_len=0, uint8_t *pt=nullptr, uint64_t pt_len=0)
-				{
-					if (protocol.verifier == HMAC) {
-						hmac->generate(ct, ct_len); // hmac ciphertext
-						mac = hmac->get_mac();
-					} else if (protocol.verifier == ECDSA) {
-						ecdsa->sign(pt, pt_len); // sign plaintext
-						mac = ecdsa->get_signature().data();
-					}
-					// GCM generation not needed
-				}
+				void generate(uint8_t *ct, uint64_t ct_len, uint8_t *pt, uint64_t pt_len);
 
 				// mac: mac can be ecdsa signature or hmac depending on which is used
-				void verify(uint8_t *ct=nullptr, uint64_t ct_len=0, uint8_t *pt=nullptr, uint64_t pt_len=0,
-							uint8_t *mac=nullptr, CryptoPP::ECPPoint *public_key=nullptr)
-				{
-					if (protocol.verifier == HMAC) {
-						hmac->verify(ct, ct_len, mac);
-						verified = hmac->is_verified();
-					} else if (protocol.verifier == ECDSA) {
-						ecdsa->verify(pt, pt_len, mac, protocol.mac_size, *public_key);
-						verified = ecdsa->is_verified();
-					} else { // GCM
-						verified = decipher->is_verified_gcm();
-					} 
-				}
+				void verify(uint8_t *ct, uint64_t ct_len, uint8_t *pt, uint64_t pt_len,
+							uint8_t *mac, CryptoPP::ECPPoint *public_key);
 
-				bool is_verified()
-				{
-					return verified;
-				}
+				bool is_verified();
 
-				uint8_t *get_mac()
-				{
-					return mac;
-				}
+				uint8_t *get_mac();
 	};
 
 	// TODO: find a way to secure communication protocol by secritizing some aspects of it
