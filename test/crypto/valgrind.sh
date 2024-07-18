@@ -1,1 +1,1 @@
-valgrind ./crypto --leak-check=full --track-origins=yes --verbose -s
+valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes -s ./crypto

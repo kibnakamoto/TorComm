@@ -32,7 +32,8 @@ int main()
 {
 	// 1. Test ProtocolData
 	Cryptography::Curves curve = Cryptography::SECP256K1;
-	Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_AES256_GCM_SHA512;
+	// Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_HMAC_AES256_CBC_SHA256;
+	Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_AES256_GCM_SHA256;
 	//Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_ECDSA_AES128_CBC_SHA512;
 	uint8_t protocol = (uint8_t)comm_protocol + curve;
 	std::cout << std::endl << "protocol number: " << protocol+0 << std::endl;
@@ -57,13 +58,13 @@ int main()
 
 	// ECDH - Alice
 	auto alice = alice_key.multiply(bob_key.public_key);
-	uint8_t *alice_x = new uint8_t[curve_size];
+	uint8_t *alice_x;
 	alice_key.integer_to_bytes(alice.x, alice_x, curve_size);
 	alice_key.hkdf(alice_x, curve_size, (uint8_t*)"", 0, (uint8_t*)"", 0); // HKDF
 
 	// ECDH - Bob
 	auto bob = bob_key.multiply(alice_key.public_key);
-	uint8_t *bob_x = new uint8_t[curve_size];
+	uint8_t *bob_x;
 	bob_key.integer_to_bytes(bob.x, bob_x, curve_size);
 	bob_key.hkdf(bob_x, curve_size, (uint8_t*)"", 0, (uint8_t*)"", 0); // HKDF
 
@@ -162,6 +163,7 @@ int main()
 
 	std::cout << std::endl;
 	delete[] alice_mac;
+	delete[] decrypted;
 	delete[] iv;
 	delete[] pt;
 	delete[] ct;
