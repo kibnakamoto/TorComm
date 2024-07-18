@@ -190,6 +190,8 @@ bool Blocked::unblock(std::string ip)
 
 		if(decrypted == ip_addr) {
 			// remove ip
+			delete[] ips[i];
+			delete[] ivs[i];
 			ips.erase(ips.begin()+i);
 			ip_lengths.erase(ip_lengths.begin()+i);
 			ivs.erase(ivs.begin()+i);
