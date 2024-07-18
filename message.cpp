@@ -761,6 +761,70 @@ bool Cryptography::Hmac::verify(uint8_t *ct, uint64_t len, uint8_t *mac_code)
 	return verified;
 }
 
+Cryptography::Verifier::Verifier(ProtocolData &protocol, Key &key, Cipher *cipher=nullptr,
+								 Decipher *decipher=nullptr) : protocol(protocol)
+{
+	if (protocol.verifier == HMAC) {
+		hmac = new Hmac(protocol, key.key);
+	} else if (protocol.verifier == ECDSA) {
+		ecdsa = new Ecdsa(protocol, key);
+	} else { // GCM
+		mac = Cipher::to_uint8_ptr(cipher->get_mac_gcm()); // already generated
+		this->decipher = decipher;
+		#if DEBUG_MODE
+			if(decipher == nullptr) {
+				throw std::runtime_error("Verifier::Verifier: DECIPHER NULL error. In GCM mode, decipher object has to be non-nullptr");
+			}
+		#endif
+	}
+}
+
+
+Cryptography::Verifier::~Verifier()
+{
+	if(hmac != nullptr)
+		delete hmac;
+	
+	if(ecdsa != nullptr)
+		delete ecdsa;
+}
+
+void Cryptography::Verifier::generate(uint8_t *ct=nullptr, uint64_t ct_len=0, uint8_t *pt=nullptr, uint64_t pt_len=0)
+{
+	if (protocol.verifier == HMAC) {
+		hmac->generate(ct, ct_len); // hmac ciphertext
+		mac = hmac->get_mac();
+	} else if (protocol.verifier == ECDSA) {
+		ecdsa->sign(pt, pt_len); // sign plaintext
+		mac = ecdsa->get_signature().data();
+	}
+	// GCM generation not needed
+}
+
+void Cryptography::Verifier::verify(uint8_t *ct=nullptr, uint64_t ct_len=0, uint8_t *pt=nullptr, uint64_t pt_len=0,
+							uint8_t *mac=nullptr, CryptoPP::ECPPoint *public_key=nullptr)
+{
+	if (protocol.verifier == HMAC) {
+		hmac->verify(ct, ct_len, mac);
+		verified = hmac->is_verified();
+	} else if (protocol.verifier == ECDSA) {
+		ecdsa->verify(pt, pt_len, mac, protocol.mac_size, *public_key);
+		verified = ecdsa->is_verified();
+	} else { // GCM
+		verified = decipher->is_verified_gcm();
+	} 
+}
+
+bool Cryptography::Verifier::is_verified()
+{
+	return verified;
+}
+
+uint8_t *Cryptography::Verifier::get_mac()
+{
+	return mac;
+}
+
 std::string get_time()
 {
     auto time = std::chrono::system_clock::now();
