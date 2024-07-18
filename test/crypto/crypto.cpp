@@ -32,9 +32,9 @@ int main()
 {
 	// 1. Test ProtocolData
 	Cryptography::Curves curve = Cryptography::SECP256K1;
-	// Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_HMAC_AES256_CBC_SHA256;
-	Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_AES256_GCM_SHA256;
-	//Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_ECDSA_AES128_CBC_SHA512;
+	// Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_HMAC_AES256_CBC_SHA256; // HMAC is fully debugged
+	// Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_AES256_GCM_SHA256; // GCM-mode is fully debugged
+	Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_ECDSA_AES128_CBC_SHA512; // TODO: debug ecdsa
 	uint8_t protocol = (uint8_t)comm_protocol + curve;
 	std::cout << std::endl << "protocol number: " << protocol+0 << std::endl;
 	Cryptography::ProtocolData protocold(protocol); // initialize
@@ -158,8 +158,6 @@ int main()
 	std::ofstream file("../test.txt", std::ios_base::app);
 	file << 2;
 	file.close();
-
-	// 6. Test ECDSA (Not Version 1.0)
 
 	std::cout << std::endl;
 	delete[] alice_mac;
