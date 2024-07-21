@@ -197,21 +197,21 @@ void Cryptography::ProtocolData::init_hash_data()
 		hash = SHA256;
 		hashf = CryptoPP::SHA256();
 
-		if(verifier == HMAC)
+		if(verifier == HMAC) {
 			mac_size = 32;
-		else if(verifier == ECDSA)
+		} else if(verifier == ECDSA) {
 			mac_size = get_curve_size(curve)<<1;
-		else {
+		} else {
 			mac_size = 16;
 		}
 	} else if(communication_protocols[protocol].find("SHA512") != std::string::npos) {
 		hash = SHA512;
 		hashf = CryptoPP::SHA512();
-		if(verifier == HMAC)
+		if(verifier == HMAC) {
 			mac_size = 64;
-		else if(verifier == ECDSA)
+		} else if(verifier == ECDSA) {
 			mac_size = get_curve_size(curve)<<1;
-		else {
+		} else {
 			mac_size = 16;
 		}
 	} else {

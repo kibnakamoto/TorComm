@@ -35,8 +35,10 @@ int main()
 	// Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_HMAC_AES256_CBC_SHA256; // HMAC is fully debugged
 	// Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_AES256_GCM_SHA256; // GCM-mode is fully debugged
 	Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_ECDSA_CHACHA20_SHA512; // Ecdsa is fully debugged
+	// Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_ECDSA_AES192_CBC_SHA512; // Ecdsa is fully debugged
 	uint8_t protocol = (uint8_t)comm_protocol + curve;
-	std::cout << std::endl << "protocol number: " << protocol+0 << std::endl;
+	std::cout << std::endl << "protocol number: " << protocol+0;
+	std::cout << std::endl << "cipher suite: " << Cryptography::communication_protocols[protocol] << std::endl;
 	Cryptography::ProtocolData protocold(protocol); // initialize
 	assert(protocold.error == NO_ERROR); // check if there are any errors
 
