@@ -574,18 +574,47 @@ void Cryptography::Decipher::assign_key(uint8_t *key)
 
 void Cryptography::Ecdsa::signer_init(auto signer, uint8_t *msg, uint16_t msg_len)
 {
+	// Valgrind: still reachable memory leak (16 bytes). In stringsource code. Nothing can be done as it seems to an dismissable library bug.
 	signer.AccessKey().Initialize(protocol.curve_oid, key->private_key);
 	CryptoPP::StringSource s(msg, msg_len, true,
     						 new CryptoPP::SignerFilter(prng,
 									 		  			signer,
-											  			new CryptoPP::VectorSink(signature)));
+											  			new CryptoPP::ArraySink(signature, protocol.mac_size)));
+	
+}
+
+Cryptography::Ecdsa& Cryptography::Ecdsa::operator=(Cryptography::Ecdsa &&other)
+{
+	this->protocol = other.protocol;
+	this->key = other.key;
+	if(signature == nullptr)
+		signature = new uint8_t[protocol.mac_size];
+	memcpy(this->signature, other.signature, protocol.mac_size); // copy signature
+	this->verified = other.verified;
+	return *this;
+}
+
+Cryptography::Ecdsa::~Ecdsa()
+{
+	if(signature != nullptr)
+		delete [] signature;
+}
+
+uint8_t *Cryptography::Ecdsa::get_signature()
+{
+	return signature;
+}
+
+bool Cryptography::Ecdsa::is_verified()
+{
+	return verified;
 }
 
 // msg: message as the data segment. If image, msg_len is IMAGE_BUFFER_SIZE
 // msg_len: length of msg
 Cryptography::Ecdsa::Ecdsa(ProtocolData &protocol, Key &key) : protocol(protocol), key(&key)
 {
-	//*this->key = key;
+	signature = new uint8_t[protocol.mac_size];
 }
 
 // returns signature as a vector
@@ -617,20 +646,21 @@ void Cryptography::Ecdsa::sign(uint8_t *msg, uint16_t msg_len)
 // signature: ECDSA signature
 // signature_len: length of signature
 // public_key: received public key. Not the own public key
-bool Cryptography::Ecdsa::verify(uint8_t *msg, uint16_t msg_len, uint8_t *&signature, uint16_t signature_len,
+bool Cryptography::Ecdsa::verify(uint8_t *msg, uint16_t msg_len, uint8_t *&signature,
 			CryptoPP::ECPPoint public_key)
 {
 	bool verified;
 	if(protocol.hash == SHA256) {
 		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::PublicKey public_k;
 		public_k.Initialize(protocol.curve_oid, public_key); // init public key
+
 		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA256>::Verifier verifier(public_k);
-		verified = verifier.VerifyMessage(&msg[0], msg_len, &signature[0], signature_len); // ecdsa message verification
+		verified = verifier.VerifyMessage(msg, msg_len, signature, protocol.mac_size); // ecdsa message verification
 	} else if(protocol.hash == SHA512) {
 		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::PublicKey public_k;
 		public_k.Initialize(protocol.curve_oid, public_key); // init public key
 		CryptoPP::ECDSA<CryptoPP::ECP, CryptoPP::SHA512>::Verifier verifier(public_k);
-		verified = verifier.VerifyMessage(&msg[0], msg_len, &signature[0], signature_len); // ecdsa message verification
+		verified = verifier.VerifyMessage(msg, msg_len, signature, protocol.mac_size); // ecdsa message verification
 	} else {
 		#if DEBUG_MODE
 			throw std::runtime_error("Ecdsa::verify: HASHING_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
@@ -641,7 +671,7 @@ bool Cryptography::Ecdsa::verify(uint8_t *msg, uint16_t msg_len, uint8_t *&signa
 		CryptoPP::ECDSA<CryptoPP::ECP, default_hash>::PublicKey public_k;
 		public_k.Initialize(protocol.curve_oid, public_key); // init public key
 		CryptoPP::ECDSA<CryptoPP::ECP, default_hash>::Verifier verifier(public_k);
-		verified = verifier.VerifyMessage(&msg[0], msg_len, &signature[0], signature_len); // ecdsa message verification
+		verified = verifier.VerifyMessage(msg, msg_len, signature, protocol.mac_size); // ecdsa message verification
 	}
 	this->verified = verified;
 
@@ -796,9 +826,9 @@ void Cryptography::Verifier::generate(uint8_t *ct=nullptr, uint64_t ct_len=0, ui
 		mac = hmac->get_mac();
 	} else if (protocol.verifier == ECDSA) {
 		ecdsa->sign(pt, pt_len); // sign plaintext
-		mac = ecdsa->get_signature().data();
+		mac = ecdsa->get_signature();
 	}
-	// GCM generation not needed
+	// GCM generation not needed, defined in constructor
 }
 
 void Cryptography::Verifier::verify(uint8_t *ct=nullptr, uint64_t ct_len=0, uint8_t *pt=nullptr, uint64_t pt_len=0,
@@ -808,7 +838,7 @@ void Cryptography::Verifier::verify(uint8_t *ct=nullptr, uint64_t ct_len=0, uint
 		hmac->verify(ct, ct_len, mac);
 		verified = hmac->is_verified();
 	} else if (protocol.verifier == ECDSA) {
-		ecdsa->verify(pt, pt_len, mac, protocol.mac_size, *public_key);
+		ecdsa->verify(pt, pt_len, mac, *public_key);
 		verified = ecdsa->is_verified();
 	} else { // GCM
 		verified = decipher->is_verified_gcm();

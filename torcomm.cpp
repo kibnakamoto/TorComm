@@ -25,7 +25,7 @@
 #include "settings.h"
 #include "keys.h"
 
-////////// TODOS:
+////////// CHANGELOG.doc
 /* DONE:
  * MAJOR BUG DETECTED: ADD NO PADDING OPTION TO ALL AES ENCRYPTORS/DECRYPTORS. ALSO CHANGE PT SIZE TO CT SIZE ON PUT FUNCTION CALL - Oct/Nov
  *AES256_CBC
@@ -41,11 +41,11 @@
  * define key exchanging for 2 peer communication  - Jan 3, 2024
  * Testing Cryptography And everything but networking DONE, started network debugging - Jan 5 2024
  * SECURITY BUG (SIDE CHANNEL ATTACK) FIXED: HMAC algorithms hmacs plaintext, it should do ciphertext instead. Use encrypt-then-mac (ETM) protocol - Jul 11, 2024
+ * SECURITY BUG (SIDE CHANNEL ATTACK) DETECTED: identify AEAD algorithms and make sure that hmac/ecdsa isn't used for them. e.g. GCM should use it's own verification algorithm. integrate this into the Verification class - Done july 18, 2024
  */
 
 /* FUTURE TODOS: (Not for version 1.0)
  *
- * TODO: add ecdsa support on send/recv and protocol data sizes
  * TODO: Optimize the iv and other pointer allocations only once and take them as a function parameter for more efficiency.
  */
 
@@ -56,7 +56,7 @@
  */
 
 /* MAJOR:
- * TODO: SECURITY BUG (SIDE CHANNEL ATTACK) DETECTED: identify AEAD algorithms and make sure that hmac/ecdsa isn't used for them. e.g. GCM should use it's own verification algorithm. integrate this into the Verification class
+ * TODO: add ecdsa support on send/recv and protocol data sizes -- working on it, July 18, 2024
  */
 
 int main()

@@ -814,8 +814,8 @@ class P2P
 					cipher.assign_iv(iv);
 					cipher.encrypt(u8data, data_len, &packet[security_len], cipher_len);
 
-					// generate MAC
-					verifier.generate(&packet[security_len], cipher_len, u8data, data_len);
+					// generate MAC (make sure padding is not included in plaintext)
+					verifier.generate(&packet[security_len], cipher_len, &u8data[u8data[0]], data_len-u8data[0]);
 
 					// copy mac and iv
 					memcpy(packet, verifier.get_mac(), protocol.mac_size);
@@ -854,8 +854,8 @@ class P2P
 						cipher.assign_iv(iv);
 						cipher.encrypt(u8data, s_size, &packet[security_len], cipher_len);
 	
-						// generate HMAC
-						verifier.generate(&packet[security_len], cipher_len, u8data, s_size);
+						// generate MAC
+						verifier.generate(&packet[security_len], cipher_len, &u8data[u8data[0]], s_size-u8data[0]);
 
 						// copy mac and iv
 						memcpy(packet, verifier.get_mac(), protocol.mac_size);
@@ -878,22 +878,23 @@ class P2P
 
 			// find length of full data to send:
 			uint8_t *packet;
-			uint64_t len = (length + (protocol.block_size - length%protocol.block_size))<<div; // ciphertext length
-			uint64_t full_len = len+security_len;
 			uint8_t *iv = protocol.generate_iv(); // get new iv
-			packet = new uint8_t[full_len];
 
 			 // pad data
 			if(length%protocol.block_size != 0) {
 				dat = cipher.pad(&dat[0], length);
 			}
 
+			uint64_t len = (length + dat[0])<<div; // ciphertext length
+			uint64_t full_len = len+security_len;
+			packet = new uint8_t[full_len];
+
 			// encrypt
 			cipher.assign_iv(iv);
 			cipher.encrypt(reinterpret_cast<uint8_t*>(&dat[0]), length, &packet[security_len], len);
 
 			// generate HMAC
-			verifier.generate(&packet[security_len], len, reinterpret_cast<uint8_t*>(&dat[0]), length);
+			verifier.generate(&packet[security_len], len, reinterpret_cast<uint8_t*>(&dat[dat[0]]), length-dat[0]); // make sure padding is not included in plaintext
 
 			// copy mac and iv
 			memcpy(packet, verifier.get_mac(), protocol.mac_size);
