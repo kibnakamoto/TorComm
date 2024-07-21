@@ -34,7 +34,7 @@ int main()
 	Cryptography::Curves curve = Cryptography::SECP256K1;
 	// Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_HMAC_AES256_CBC_SHA256; // HMAC is fully debugged
 	// Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_AES256_GCM_SHA256; // GCM-mode is fully debugged
-	Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_ECDSA_AES128_CBC_SHA256; // TODO: debug ecdsa
+	Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_ECDSA_CHACHA20_SHA512; // Ecdsa is fully debugged
 	uint8_t protocol = (uint8_t)comm_protocol + curve;
 	std::cout << std::endl << "protocol number: " << protocol+0 << std::endl;
 	Cryptography::ProtocolData protocold(protocol); // initialize
@@ -112,7 +112,7 @@ int main()
 
 	// 4. Test Decipher
 	Cryptography::Decipher decipher(protocold, key);
-	Cryptography::Verifier verifier(protocold, bob_key, &cipher, &decipher);
+	Cryptography::Verifier verifier(protocold, alice_key, &cipher, &decipher);
 
 	// Alice generates mac/signature/tag
 	verifier.generate(ct, ct_len, &plain[plain[0]], pt_len-plain[0]);
@@ -154,7 +154,7 @@ int main()
 	// assert to make sure everything works
 	assert(gen_key_success);
 	assert(decrypted_success);
-	//assert(mac_verified);
+	assert(mac_verified);
 
 	std::ofstream file("../test.txt", std::ios_base::app);
 	file << 2;
