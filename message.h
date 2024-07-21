@@ -575,12 +575,12 @@ namespace Cryptography
 
 
 	// Elliptic Cryptography Digital Signature Algorithm
-	class Ecdsa : public ErrorHandling
+	class Ecdsa : public ErrorHandling // if error handling is not too significant, maybe try making the Verifier class a base class and Ecdsa and Hmac overriding derived class
 	{
 		ProtocolData protocol;
 		Key *key=nullptr;
 		CryptoPP::AutoSeededRandomPool prng;
-		std::vector<uint8_t> signature; // only for when signing, when verifying, give the parameter as uint8_t*
+		uint8_t *signature=nullptr; // only for when signing, when verifying, give the parameter as uint8_t*
 		bool verified;
 
 		// initialize signer
@@ -590,14 +590,9 @@ namespace Cryptography
 
 		Ecdsa() = default;
 
-		Ecdsa& operator=(Cryptography::Ecdsa &&other)
-		{
-			this->protocol = other.protocol;
-			this->key = other.key;
-			this->signature = other.signature;
-			this->verified = other.verified;
-			return *this;
-		}
+		Ecdsa& operator=(Cryptography::Ecdsa &&other);
+		
+		~Ecdsa();
 
 		Ecdsa(ProtocolData &protocol, Key &key);
 
@@ -606,15 +601,9 @@ namespace Cryptography
 		// msg_len: length of message to sign
 		void sign(uint8_t *msg, uint16_t msg_len);
 
-		std::vector<uint8_t> get_signature()
-		{
-			return signature;
-		}
+		uint8_t *get_signature();
 
-		bool is_verified()
-		{
-			return verified;
-		}
+		bool is_verified();
 
 		// public key is received as bytes. Convert to ECPoint using: Key::reconstruct_point_from_bytes
 		// msg: message to verify
@@ -622,7 +611,7 @@ namespace Cryptography
 		// signature: ECDSA signature
 		// signature_len: length of signature
 		// public_key: received public key. Not the own public key
-		bool verify(uint8_t *msg, uint16_t msg_len, uint8_t *&signature, uint16_t signature_len,
+		bool verify(uint8_t *msg, uint16_t msg_len, uint8_t *&signature,
 					CryptoPP::ECPPoint public_key);
 
 		// returns the length of out buffer, gets the compressed x value with the 03 starting byte
