@@ -42,21 +42,22 @@
  * Testing Cryptography And everything but networking DONE, started network debugging - Jan 5 2024
  * SECURITY BUG (SIDE CHANNEL ATTACK) FIXED: HMAC algorithms hmacs plaintext, it should do ciphertext instead. Use encrypt-then-mac (ETM) protocol - Jul 11, 2024
  * SECURITY BUG (SIDE CHANNEL ATTACK) DETECTED: identify AEAD algorithms and make sure that hmac/ecdsa isn't used for them. e.g. GCM should use it's own verification algorithm. integrate this into the Verification class - Done july 18, 2024
+ * add ecdsa support on send/recv and protocol data sizes - Done Jul 20 2024
  */
 
 /* FUTURE TODOS: (Not for version 1.0)
  *
  * TODO: Optimize the iv and other pointer allocations only once and take them as a function parameter for more efficiency.
- */
-
-/* NOT DONE:
- * TODO: make all parameters relating to length 64-bit as required by send_full function (cryptography)
  * TODO: define key exchanging for multi peer communication 
  * TODO: When sending the protocol no in P2P::send_two_party_ecdh(), make sure to encrypt the protocol number. the padding can be completely random values (15-bytes). The first byte will be the protocol number. This will make the protocol number private so no one will know it. use the default security protocol ALWAYS for this operation. Make sure to verify with HMAC
  */
 
+/* NOT DONE:
+ * TODO: make all parameters relating to length 64-bit as required by send_full function (cryptography)
+ */
+
 /* MAJOR:
- * TODO: add ecdsa support on send/recv and protocol data sizes -- working on it, July 18, 2024
+ * TODO: debug networking code
  */
 
 int main()
