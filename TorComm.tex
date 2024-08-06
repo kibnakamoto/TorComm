@@ -220,6 +220,15 @@ To set the password, execute the $key$ file which would generate the $get\_keys$
 The key is used for securing any personal data stored on the device. Such as the configuration file for each session. If you're texting somebody and want to save their ip address so you can conviniently text them again without re-entering the ip address and reconfiguring the communication session, the ip and other data needs to be encrypted and stored.
 The 2-byte port key is used for encrypting the ports in configuration files
 
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+
 \subsection{Algorithm}
 The C++ code is in $security/key.cpp$, but the basic idea is as following:
 
@@ -271,7 +280,7 @@ Generate exe for getting key ((*$get\_keys$*)):
 
 
 \subsection{Security}
-
+ 
 since 2/3-bytes of the pepper is not stored in the $get\_keys$ file, they need to be guessed with every password that is entered. If we say 3 bytes of the data needs to be guessed. then the number of combinations in password is multiplied with $256^3$.
 
 e.g. if you have a 4-digit pin as your password, then there are $10^4$ combinations in your password. Then the total number of combinations in password is $(256^3)(10^4) = 167772160000$.

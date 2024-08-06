@@ -10,6 +10,7 @@
 *.out
 *.app
 *.aux
+*.toc
 torcomm
 
 # Documentation Log
