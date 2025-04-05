@@ -34,6 +34,7 @@ ui/CMakeCache.txt
 ui/CMakeFiles
 ui/cmake_install.cmake
 ui/Makefile
+ui/gui
 
 # blocked ips
 blocked
