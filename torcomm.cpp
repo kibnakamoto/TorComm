@@ -58,6 +58,7 @@
 
 /* MAJOR:
  * TODO: debug networking code
+ * TODO: for the AEAD algorithms, make sure that the previous ciphertext is used as an AD, this is to make sure that same data cannot be resent.
  */
 
 int main()
