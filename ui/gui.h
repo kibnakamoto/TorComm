@@ -1,33 +1,58 @@
 #ifndef GUI_H
 #define GUI_H
 
-#include <qt5/QtWidgets/QWidget>
-#include <qt5/QtCore/QString>
+#include <QWidget>
+#include <QString>
+#include <QFileDialog>
+#include <QMessageBox>
+#include <QErrorMessage>
 
-#include "interface.h"
+#include <iostream>
+#include <string>
 
-class GUI : public UI
+class GUI : public QWidget
 {
-	
-		virtual void raise_warning(std::string msg) override;
+    public:
+	        // give the user a warning
+	        void warning(const char *msg)
+            {
+                    QMessageBox warning;
+                    warning.setText(msg);
+                    warning.setIcon(QMessageBox::Warning);
+                    warning.setWindowTitle("Caution");
+                    warning.exec();
+            }
 
-		virtual void raise_error(std::string msg) override;
+	        // give the user an error
+	        void error(const char *msg)
+            {
+                QErrorMessage error;
+                error.showMessage(msg);
+                error.exec();
+            }
 
-		virtual void print(std::string msg) override;
+            // give the user a message/information
+	        void info(const char *msg)
+            {
+                QMessageBox box;
+                box.setText(msg);
+                box.exec();
+            }
 };
 
 // make a file finder class
-class FileFinder : public QWidget
+class Files : public QWidget
 {
 	public:
-			FileFinder() = default;
+			Files() = default;
 			
-			find_one_file()
+            // select files, they will be parsed and sent. If sending multiple files, they will be
+            // parsed/sent one by one
+            QStringList select_files()
 			{
-				QString fileName = QFileDialog::getOpenFileName(this, tr("Open File"),
-                                                "/home",
-                                                tr("Images (*.png *.xpm *.jpg)"));
+                 QStringList filenames = QFileDialog::getOpenFileNames(this, "Select files", QString(),
+                                                                       "All Files (*.*)");
+                return filenames;
 			}
-			
 };
 #endif /* GUI_H */

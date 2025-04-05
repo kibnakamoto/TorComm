@@ -1,0 +1,3 @@
+/home/kibnakamoto/workspace/TorComm/ui/CMakeFiles/gui.dir
+/home/kibnakamoto/workspace/TorComm/ui/CMakeFiles/edit_cache.dir
+/home/kibnakamoto/workspace/TorComm/ui/CMakeFiles/rebuild_cache.dir
