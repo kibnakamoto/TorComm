@@ -184,7 +184,7 @@ class P2P
 						sock.close(); // stop socket because it's blocked
 					} else {
 						if(std::find_if(clients.begin(), clients.end(), [remote_endpoint](const auto &socket)
-						   { return remote_endpoint == socket.remote_endpoint();} ) == clients.end()) {
+						   				{ return remote_endpoint == socket.remote_endpoint();} ) == clients.end()) {
 							std::cout << "\nnew connection to " << remote_endpoint;
 				    		clients.push_back(std::move(sock));
 							if(lambda) {
@@ -217,7 +217,7 @@ class P2P
 
 						// it's already connected
 						if(std::any_of(clients.begin(), clients.end(), [remote_endpoint](const auto &socket)
-						   		   { return remote_endpoint == socket.remote_endpoint(); })) {
+						   		 	   { return remote_endpoint == socket.remote_endpoint(); })) {
 							std::cout << "\n" << remote_endpoint << " is already connected";
 						} else { // not already connected
 							std::cout << "\nnew connection to " << remote_endpoint;
@@ -983,7 +983,7 @@ class P2P
 				len = server.available();
 				if(len) { // if there is data to read
 					boost::asio::async_read(server, boost::asio::buffer(dat, packet_size), [&](boost::system::error_code ec, 
-																						   uint64_t) {
+																						   	   uint64_t) {
 						if (!ec) {
 							get_info(dat, len, type);
 						} else {
