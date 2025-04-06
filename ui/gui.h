@@ -23,50 +23,111 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QErrorMessage>
+#include <QApplication>
 
 #include <iostream>
 #include <string>
+
+#include "interface.h"
 
 // TODO: Add an interface for a texting tool
 // TODO: Add Documentation while developing
 // TODO: Add color schemes and make sure that all graphics abide the given color schemes
 // TODO: Make a cipher suite selector
 
-class GUI : public QWidget
+class Desktop : public GUI, public QWidget
 {
+    // add a specific theme
+    void style_sheet(const QString &filename)
+    {
+        QFile file(filename);
+        if (file.open(QFile::ReadOnly)) {
+            QString styleSheet = QLatin1String(file.readAll());
+            app->setStyleSheet(styleSheet);
+        }
+    }
+    QApplication *app;
+
     public:
+            // default constructor
+            Desktop() = default;
+
+            Desktop(QApplication &qapp) : app(&qapp)
+            {
+                 // default should be dark theme
+                 is_dark_theme = true;
+
+                 // set default theme
+                 set_theme();
+            }
+
+            // Main interface of the chat app
+            void set_theme() override
+            {
+                if(is_dark_theme) {
+                    style_sheet("dark.qss");
+                    
+                } else { // light theme
+                    // TODO: implement light.qss, light theme not supported yet
+                    style_sheet("light.qss");
+                    
+                }
+            }
+
+
+            // Ask a question (e.g. are you sure you want to close app?)
+            // use switch case to handle question (save, discard, cancel)
+            int question(const char *question, const char *msg) override
+            {
+                QMessageBox qbox;
+                qbox.setText(msg);
+                qbox.setInformativeText(question);
+                qbox.setStandardButtons(QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+                qbox.setDefaultButton(QMessageBox::Save);
+                int response = qbox.exec();
+                return response;
+            }
+
 	        // give the user a warning
-	        void warning(const char *msg)
+	        void warning(const char *msg) override
             {
                     QMessageBox warning;
                     warning.setText(msg);
                     warning.setIcon(QMessageBox::Warning);
-                    warning.setWindowTitle("Caution");
+                    warning.setWindowTitle("Warning");
                     warning.exec();
             }
 
 	        // give the user an error
-	        void error(const char *msg)
+	        void error(const char *msg) override
             {
-                QErrorMessage error;
-                error.showMessage(msg);
+                QMessageBox error;
+                error.setIcon(QMessageBox::Critical);
+                error.setWindowTitle("Error");
+                error.setText(msg);
                 error.exec();
             }
 
             // give the user a message/information
-	        void info(const char *msg)
+	        void info(const char *msg) override
             {
                 QMessageBox box;
                 box.setText(msg);
+                box.setIcon(QMessageBox::Information);
+                box.setWindowTitle("Information");
                 box.exec();
             }
 };
 
 // make a file finder class
-class Files : public QWidget
+class Files : public Desktop
 {
 	public:
-			Files() = default;
+			Files()
+            {
+                // set default style, must initialize GUI class first in main since is_dark_theme is static
+                style();
+            }
 			
             // select files, they will be parsed and sent. If sending multiple files, they will be
             // parsed/sent one by one
@@ -77,4 +138,5 @@ class Files : public QWidget
                 return filenames;
 			}
 };
+
 #endif /* GUI_H */
