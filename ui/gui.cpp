@@ -12,7 +12,7 @@
   *
   * Author: Taha
   * Date: 2023, Dec 9
-  * Description: This is the main file of this project. This is for people to securely communicate over a public channel using a P2P system (TCP/IPv6). 
+  * Description: This is the main user interace. This is for people to securely communicate over a public channel using a P2P system (TCP/IPv6). 
   */
 
 #ifndef GUI_CPP
@@ -24,11 +24,15 @@
 
 #include "gui.h"
 
+
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    Desktop gui(app);
     Files files;
-    GUI gui;
+    gui.error("an example error message");
+    gui.warning("an example warning message");
+    gui.info("an example info message");
 	return 0;
 }
 
