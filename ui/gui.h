@@ -11,7 +11,7 @@
   * along with this program.  if not, see <https://www.gnu.org/licenses/>.
   *
   * Author: Taha
-  * Date: 2023, Dec 9
+  * Date: 2025, Apr 5
   * Description: This is the main file of this project. This is for people to securely communicate over a public channel using a P2P system (TCP/IPv6). 
   */
 
@@ -24,13 +24,20 @@
 #include <QMessageBox>
 #include <QErrorMessage>
 #include <QApplication>
+#include <QVBoxLayout>
+#include <QTextBrowser>
+#include <QTextEdit>
+#include <QPushButton>
+#include <QLabel>
+#include <QScrollBar>
+#include <QScrollArea>
 
 #include <iostream>
 #include <string>
 
 #include "interface.h"
+#include "qnamespace.h"
 
-// TODO: Add an interface for a texting tool
 // TODO: Add Documentation while developing
 // TODO: Add color schemes and make sure that all graphics abide the given color schemes
 // TODO: Make a cipher suite selector
@@ -47,18 +54,101 @@ class Desktop : public GUI, public QWidget
         }
     }
     QApplication *app;
+    inline static QPushButton *send_button;
+    inline static QTextEdit *textbox;
+    inline static const char *styler_filename;
+    inline static QVBoxLayout *chat_history;
 
     public:
             // default constructor
             Desktop() = default;
 
-            Desktop(QApplication &qapp) : app(&qapp)
+            Desktop(QApplication &app) : app(&app)
             {
                  // default should be dark theme
                  is_dark_theme = true;
 
+                 // set default font size
+                 GUI::font.setPointSize(15);  // TODO: make font/fontsize controlled in the settings
+
                  // set default theme
                  set_theme();
+
+                 // start a interface to start texting.
+                 start_interface();
+            }
+
+            // start the main interface for texting
+            void start_interface()
+            {
+                QVBoxLayout *layout = new QVBoxLayout(this);
+
+                // layout for chat history
+                QScrollArea *scroller = new QScrollArea(this);
+                QWidget *container = new QWidget(scroller);
+                chat_history = new QVBoxLayout(container);
+                container->setLayout(chat_history);
+                scroller->setWidget(container);
+                scroller->setWidgetResizable(true);
+                layout->addWidget(scroller);
+                scroller->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);  // Allow vertical expansion but keep width fixed
+
+                // define the textbox to write new messages + the send button (horizontal layout)
+                QHBoxLayout *hlayout = new QHBoxLayout(this);
+                textbox = new QTextEdit(this);
+                textbox->setFixedHeight(50); // TODO: make this number depend on dimensions of screen
+                textbox->setStyleSheet(styler_filename);
+                textbox->setPlaceholderText("Enter Text Message Here...");
+
+                // set font size of textbox
+                textbox->setFont(GUI::font);
+
+                send_button = new QPushButton(this);
+                send_button->setText("Send");
+                send_button->setFont(GUI::font);
+                send_button->setFixedHeight(50); // TODO: make this number depend on dimensions of screen
+                send_button->setStyleSheet(styler_filename);
+                hlayout->addWidget(textbox);
+                hlayout->addWidget(send_button);
+
+                // add the text box + send button to the layout with chat history
+                layout->addLayout(hlayout);
+
+                // connect the button and the message sender
+                connect(send_button, &QPushButton::clicked, this, &send_text_message);
+            }
+
+            // only to send text messages
+            static void send_text_message()
+            {
+                QString text = textbox->toPlainText().trimmed(); // get text
+                if (!text.isEmpty()) {
+                    QLabel *label = new QLabel(text);
+                    label->setWordWrap(true);
+                    label->setStyleSheet("background-color: #224466; border-radius: 10px; padding: 10px; margin: 5px; max-width: 300px;");
+                    label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+                    label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed); // stop size from resizing
+                    label->setFixedHeight(label->sizeHint().height());  // Ensures the label has a fixed height
+                    label->setFixedWidth(label->sizeHint().width());  // Ensures the label has a fixed height
+                    chat_history->addStretch(1); // places the text to the top of chat_history
+
+                    // stop resizing per message added, scroll if needed
+                    QWidget *parentWidget = chat_history->parentWidget();
+                    if (parentWidget) {
+                        parentWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+                    }
+
+                    chat_history->addWidget(label);
+
+                    // Scroll to the bottom of the texts (as new texts are added)
+                    QScrollBar *scrollBar = chat_history->parentWidget()->findChild<QScrollBar*>();
+                    if (scrollBar) {
+                        scrollBar->setValue(scrollBar->maximum());
+                    }
+
+                    // clear text box
+                    textbox->clear();
+                }
             }
 
             // Main interface of the chat app
@@ -123,16 +213,13 @@ class Desktop : public GUI, public QWidget
 class Files : public Desktop
 {
 	public:
-			Files()
-            {
-                // set default style, must initialize GUI class first in main since is_dark_theme is static
-                style();
-            }
+			Files() = default;
 			
             // select files, they will be parsed and sent. If sending multiple files, they will be
             // parsed/sent one by one
             QStringList select_files()
 			{
+                // theme of file selector is controlled by the system
                  QStringList filenames = QFileDialog::getOpenFileNames(this, "Select files", QString(),
                                                                        "All Files (*.*)");
                 return filenames;

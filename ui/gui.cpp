@@ -30,9 +30,10 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     Desktop gui(app);
     Files files;
-    gui.error("an example error message");
-    gui.warning("an example warning message");
-    gui.info("an example info message");
+    gui.setWindowTitle("TorComm");
+    gui.resize(1600/2, 900/2);
+    gui.show();
+    app.exec();
 	return 0;
 }
 

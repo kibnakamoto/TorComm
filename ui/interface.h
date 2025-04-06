@@ -1,16 +1,20 @@
 #include <QWidget>
 #include <QApplication>
 #include <QFile>
+#include <QFont>
 
 // base class of GUIs (inhereted by desktop/phone)
 class GUI
 {
     protected:
             inline static bool is_dark_theme;
+            inline static QFont font;
 
     public:
-            // default constructor
-            GUI() = default;
+            GUI()
+            {
+                font = QFont();
+            }
 
             // Main interface of the chat app
             virtual void set_theme() = 0;
