@@ -31,6 +31,9 @@
 #include <QLabel>
 #include <QScrollBar>
 #include <QScrollArea>
+#include <QDockWidget>
+#include <QListWidget>
+#include <QSplitter>
 
 #include <iostream>
 #include <string>
@@ -55,7 +58,7 @@ class Desktop : public GUI, public QWidget
     }
     QApplication *app;
     inline static QPushButton *send_button;
-    inline static QTextEdit *textbox;
+    inline static QTextEdit *textbox; // user input (enter to chat history)
     inline static const char *styler_filename;
     inline static QVBoxLayout *chat_history;
 
@@ -81,7 +84,9 @@ class Desktop : public GUI, public QWidget
             // start the main interface for texting
             void start_interface()
             {
-                QVBoxLayout *layout = new QVBoxLayout(this);
+                QHBoxLayout *main_layout = new QHBoxLayout(this); // uses side-menu (contacts) + layout
+                QWidget *layout_widget = new QWidget(this);
+                QVBoxLayout *layout = new QVBoxLayout(layout_widget);
 
                 // layout for chat history
                 QScrollArea *scroller = new QScrollArea(this);
@@ -91,7 +96,7 @@ class Desktop : public GUI, public QWidget
                 scroller->setWidget(container);
                 scroller->setWidgetResizable(true);
                 layout->addWidget(scroller);
-                scroller->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);  // Allow vertical expansion but keep width fixed
+                scroller->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding); // might not be necesarry
 
                 // define the textbox to write new messages + the send button (horizontal layout)
                 QHBoxLayout *hlayout = new QHBoxLayout(this);
@@ -114,6 +119,37 @@ class Desktop : public GUI, public QWidget
                 // add the text box + send button to the layout with chat history
                 layout->addLayout(hlayout);
 
+                // add contacts side bar menu
+                // QDockWidget *sidemenu = new QDockWidget("Contacts", this);
+                // sidemenu->setFeatures(QDockWidget::DockWidgetMovable);
+                // sidemenu->setFloating(false); // shouldn't float
+                // sidemenu->setMaximumWidth(300);
+                // sidemenu->setMinimumWidth(100);
+                // sidemenu->setWidget(contacts);
+
+                QWidget *sidemenu = new QWidget(this);
+                QVBoxLayout *sidemenu_layout = new QVBoxLayout(sidemenu);
+                sidemenu->setMaximumWidth(300);
+                sidemenu->setMinimumWidth(100);
+        
+                // add contacts
+                QListWidget *contacts = new QListWidget(sidemenu);
+                contacts->setMaximumWidth(300);
+                contacts->setMinimumWidth(100);
+                contacts->addItem("contact 1"); // should be all unique
+
+                sidemenu_layout->addWidget(contacts);
+                sidemenu->setLayout(sidemenu_layout);
+        
+
+                QSplitter* splitter = new QSplitter(Qt::Horizontal, this);
+                splitter->addWidget(sidemenu);
+                splitter->addWidget(layout_widget);
+
+                main_layout->addWidget(splitter);
+                // main_layout->addWidget(sidemenu);
+                // main_layout->addWidget(layout_widget);
+
                 // connect the button and the message sender
                 connect(send_button, &QPushButton::clicked, this, &send_text_message);
             }
@@ -128,8 +164,8 @@ class Desktop : public GUI, public QWidget
                     label->setStyleSheet("background-color: #224466; border-radius: 10px; padding: 10px; margin: 5px; max-width: 300px;");
                     label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
                     label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed); // stop size from resizing
-                    label->setFixedHeight(label->sizeHint().height());  // Ensures the label has a fixed height
-                    label->setFixedWidth(label->sizeHint().width());  // Ensures the label has a fixed height
+                    // label->setFixedHeight(label->sizeHint().height());  // Ensures the label has a fixed height
+                    // label->setFixedWidth(label->sizeHint().width());  // Ensures the label has a fixed height
                     chat_history->addStretch(1); // places the text to the top of chat_history
 
                     // stop resizing per message added, scroll if needed
@@ -137,8 +173,14 @@ class Desktop : public GUI, public QWidget
                     if (parentWidget) {
                         parentWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
                     }
+                    QHBoxLayout *wrapper = new QHBoxLayout;
+                    wrapper->addWidget(label);
+                    wrapper->addStretch();
+                    QWidget *wrapper_w = new QWidget;
+                    wrapper_w->setLayout(wrapper);
 
-                    chat_history->addWidget(label);
+                    // Insert above stretch (or just add if you're not using a bottom stretch)
+                    chat_history->addWidget(wrapper_w);
 
                     // Scroll to the bottom of the texts (as new texts are added)
                     QScrollBar *scrollBar = chat_history->parentWidget()->findChild<QScrollBar*>();
