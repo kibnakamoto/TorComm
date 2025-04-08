@@ -34,6 +34,10 @@
 #include <QDockWidget>
 #include <QListWidget>
 #include <QSplitter>
+#include <QScroller>
+#include <QEasingCurve>
+#include <QObject>
+#include <QStackedWidget>
 
 #include <iostream>
 #include <string>
@@ -45,8 +49,10 @@
 // TODO: Add color schemes and make sure that all graphics abide the given color schemes
 // TODO: Make a cipher suite selector
 
-class Desktop : public GUI, public QWidget
+class Desktop : public QWidget, public GUI
 {
+    Q_OBJECT // macro to enable slots
+
     // add a specific theme
     void style_sheet(const QString &filename)
     {
@@ -57,10 +63,12 @@ class Desktop : public GUI, public QWidget
         }
     }
     QApplication *app;
-    inline static QPushButton *send_button;
-    inline static QTextEdit *textbox; // user input (enter to chat history)
-    inline static const char *styler_filename;
-    inline static QVBoxLayout *chat_history;
+    QTextEdit *textbox; // user input (enter to chat history) // TODO: each textbox belongs to new page. not static, so make it a map chat_history: textbox
+    inline static const char *styler_filename; // e.g. dark.qss
+    inline static std::map<std::string, QScrollArea*> chat_histories; // chat history per contact
+    inline static QListWidget *contacts;
+    QVBoxLayout *chat_history; // currently selected chat_history
+    QStackedWidget *chat_history_stack;
 
     public:
             // default constructor
@@ -68,17 +76,18 @@ class Desktop : public GUI, public QWidget
 
             Desktop(QApplication &app) : app(&app)
             {
-                 // default should be dark theme
-                 is_dark_theme = true;
+                // default should be dark theme
+                is_dark_theme = true; // TODO: add to settings.json
 
-                 // set default font size
-                 GUI::font.setPointSize(15);  // TODO: make font/fontsize controlled in the settings
+                // set default font size
+                GUI::font.setPointSize(15);  // TODO: make font/fontsize controlled in the settings
 
-                 // set default theme
-                 set_theme();
+                // set default theme
+                set_theme();
 
-                 // start a interface to start texting.
-                 start_interface();
+                // start a interface to start texting.
+                // This class starts an interface, but user should be able to start multiple interfaces
+                start_interface();
             }
 
             // start the main interface for texting
@@ -86,17 +95,34 @@ class Desktop : public GUI, public QWidget
             {
                 QHBoxLayout *main_layout = new QHBoxLayout(this); // uses side-menu (contacts) + layout
                 QWidget *layout_widget = new QWidget(this);
-                QVBoxLayout *layout = new QVBoxLayout(layout_widget);
+                QVBoxLayout *layout = new QVBoxLayout(layout_widget); // holds the chat history
+                chat_history_stack = new QStackedWidget(this);
+                layout->addWidget(chat_history_stack);
 
-                // layout for chat history
-                QScrollArea *scroller = new QScrollArea(this);
-                QWidget *container = new QWidget(scroller);
-                chat_history = new QVBoxLayout(container);
-                container->setLayout(chat_history);
-                scroller->setWidget(container);
-                scroller->setWidgetResizable(true);
-                layout->addWidget(scroller);
-                scroller->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding); // might not be necesarry
+                // add contacts side bar menu
+                QWidget *sidemenu = new QWidget(this);
+                QVBoxLayout *sidemenu_layout = new QVBoxLayout(sidemenu); // TODO: add label title to it: Contacts
+                sidemenu->setMaximumWidth(300);
+                sidemenu->setMinimumWidth(100);
+
+                // add contacts to side bar
+                contacts = new QListWidget(sidemenu);
+                contacts->setMaximumWidth(300);
+                contacts->setMinimumWidth(100);
+                connect(contacts, &QListWidget::itemClicked, this, &Desktop::open_chat_of_contact);
+
+                // example contact, should be loaded from a file
+                add_new_contact("contact 1");
+                add_new_contact("contact 2");
+
+                if (contacts->count() > 0) {
+                    contacts->setCurrentRow(0);
+                    open_chat_of_contact(contacts->currentItem());
+                }
+
+
+                sidemenu_layout->addWidget(contacts);
+                sidemenu->setLayout(sidemenu_layout);
 
                 // define the textbox to write new messages + the send button (horizontal layout)
                 QHBoxLayout *hlayout = new QHBoxLayout(this);
@@ -108,7 +134,7 @@ class Desktop : public GUI, public QWidget
                 // set font size of textbox
                 textbox->setFont(GUI::font);
 
-                send_button = new QPushButton(this);
+                QPushButton *send_button = new QPushButton(this);
                 send_button->setText("Send");
                 send_button->setFont(GUI::font);
                 send_button->setFixedHeight(50); // TODO: make this number depend on dimensions of screen
@@ -119,43 +145,56 @@ class Desktop : public GUI, public QWidget
                 // add the text box + send button to the layout with chat history
                 layout->addLayout(hlayout);
 
-                // add contacts side bar menu
-                // QDockWidget *sidemenu = new QDockWidget("Contacts", this);
-                // sidemenu->setFeatures(QDockWidget::DockWidgetMovable);
-                // sidemenu->setFloating(false); // shouldn't float
-                // sidemenu->setMaximumWidth(300);
-                // sidemenu->setMinimumWidth(100);
-                // sidemenu->setWidget(contacts);
-
-                QWidget *sidemenu = new QWidget(this);
-                QVBoxLayout *sidemenu_layout = new QVBoxLayout(sidemenu);
-                sidemenu->setMaximumWidth(300);
-                sidemenu->setMinimumWidth(100);
-        
-                // add contacts
-                QListWidget *contacts = new QListWidget(sidemenu);
-                contacts->setMaximumWidth(300);
-                contacts->setMinimumWidth(100);
-                contacts->addItem("contact 1"); // should be all unique
-
-                sidemenu_layout->addWidget(contacts);
-                sidemenu->setLayout(sidemenu_layout);
-        
-
+                // make size of contacts sidebar adjustable by mouse
+                // TODO: add stylesheet for splitter
                 QSplitter* splitter = new QSplitter(Qt::Horizontal, this);
                 splitter->addWidget(sidemenu);
                 splitter->addWidget(layout_widget);
-
                 main_layout->addWidget(splitter);
-                // main_layout->addWidget(sidemenu);
-                // main_layout->addWidget(layout_widget);
 
                 // connect the button and the message sender
-                connect(send_button, &QPushButton::clicked, this, &send_text_message);
+                connect(send_button, &QPushButton::clicked, this, &Desktop::send_text_message);
+            }
+
+            // add new contact
+            // TODO: this function needs to be tied to ../configure.json (managed in keys.cpp)
+            // TODO: make a load_contacts function to load previous contacts. Saved chats are in sessions/contact_name (encrypt name and everything else)
+            void add_new_contact(std::string contact_name)
+            {
+                QScrollArea *scroller = new QScrollArea(this);
+                scroller->setWidgetResizable(true);
+                QWidget *chat_view = new QWidget(scroller);
+                
+                QVBoxLayout *new_chat_history = new QVBoxLayout(chat_view);
+                contacts->addItem(contact_name.c_str());
+                chat_view->setLayout(new_chat_history);
+                scroller->setWidget(chat_view);
+                chat_histories[contact_name] = scroller;
+                chat_history_stack->addWidget(scroller);
+
+                if(contacts->count() == 1) {
+                    chat_history = new_chat_history;
+                    chat_history_stack->setCurrentWidget(scroller);
+                }
+            }
+
+    private slots:
+            // when clicked on contact, show chat_history
+            void open_chat_of_contact(QListWidgetItem *item)
+            {
+                std::string contact = item->text().toStdString(); // name of contact
+                
+                // get contact and place chat history
+                QScrollArea *open_chat_history = chat_histories.at(contact); // QScrollerArea
+                
+                // store this for later use when switching
+                chat_history_stack->setCurrentWidget(open_chat_history);
+                //chat_history = open_chat_history; // assing new chat_history
+                chat_history = qobject_cast<QVBoxLayout*>(open_chat_history->widget()->layout());
             }
 
             // only to send text messages
-            static void send_text_message()
+            void send_text_message()
             {
                 QString text = textbox->toPlainText().trimmed(); // get text
                 if (!text.isEmpty()) {
@@ -166,7 +205,7 @@ class Desktop : public GUI, public QWidget
                     label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed); // stop size from resizing
                     // label->setFixedHeight(label->sizeHint().height());  // Ensures the label has a fixed height
                     // label->setFixedWidth(label->sizeHint().width());  // Ensures the label has a fixed height
-                    chat_history->addStretch(1); // places the text to the top of chat_history
+                    chat_history->addStretch(1); // places the text to the top of selected chat_history
 
                     // stop resizing per message added, scroll if needed
                     QWidget *parentWidget = chat_history->parentWidget();
@@ -193,15 +232,16 @@ class Desktop : public GUI, public QWidget
                 }
             }
 
+    public:
             // Main interface of the chat app
             void set_theme() override
             {
                 if(is_dark_theme) {
-                    style_sheet("dark.qss");
+                    style_sheet("../dark.qss"); // in build folder
                     
                 } else { // light theme
                     // TODO: implement light.qss, light theme not supported yet
-                    style_sheet("light.qss");
+                    style_sheet("../light.qss");
                     
                 }
             }

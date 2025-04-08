@@ -1,3 +1,8 @@
+#ifndef INTERFACE_H
+#define INTERFACE_H
+
+#ifndef Q_MOC_RUN
+
 #include <QWidget>
 #include <QApplication>
 #include <QFile>
@@ -33,3 +38,6 @@ class GUI
 	        virtual void info(const char *msg) = 0;
 };
 
+#endif /* Q_MOC_RUN */
+
+#endif /* INTERFACE_H */

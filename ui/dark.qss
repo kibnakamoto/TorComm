@@ -12,3 +12,35 @@ QPushButton {
 QPushButton:hover {
     background-color: #505050;
 }
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;        
+    margin: 0px;        
+    border-radius: 5px; 
+}
+
+QScrollBar::handle:vertical {
+    background: #888;  
+    min-height: 30px;  
+    border-radius: 5px;
+    max-height: 70px;  
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #555;
+}
+
+/* Arrows */
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    background: transparent;
+    border: none;
+}
+
+QScrollBar:vertical:disabled {
+    background: transparent; 
+}
+
+QScrollBar::groove:vertical {
+    background: transparent;  /* Hide groove line */
+}
+
