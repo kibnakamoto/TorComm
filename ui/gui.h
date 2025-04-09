@@ -50,6 +50,14 @@
 // TODO: Add color schemes and make sure that all graphics abide the given color schemes
 // TODO: Make a cipher suite selector
 
+
+// TODO: use this for chat_histories values. draft should be written to textbox as a default value every time contacts is changed.
+struct ScrollerAndDraft
+{
+    std::string draft;
+    QScrollArea *scroller;
+};
+
 class Desktop : public QWidget, public GUI
 {
     Q_OBJECT // macro to enable slots
@@ -64,7 +72,7 @@ class Desktop : public QWidget, public GUI
         }
     }
     QApplication *app;
-    QTextEdit *textbox; // user input (enter to chat history) // TODO: each textbox belongs to new page. not static, so make it a map chat_history: textbox
+    QTextEdit *textbox; // user input (enter to chat history)
     inline static const char *styler_filename; // e.g. dark.qss
     inline static std::map<std::string, QScrollArea*> chat_histories; // chat history per contact
     inline static QListWidget *contacts;
@@ -116,24 +124,64 @@ class Desktop : public QWidget, public GUI
                 contacts = new QListWidget(sidemenu);
                 contacts->setMaximumWidth(300);
                 contacts->setMinimumWidth(100);
+                contacts->setFont(QFont(GUI::font_title.family(), GUI::font_title.pointSize()));
                 connect(contacts, &QListWidget::itemClicked, this, &Desktop::open_chat_of_contact);
 
                 // example contact, should be loaded from a file
                 add_new_contact("contact 1");
                 add_new_contact("contact 2");
+                for(char i=3;i<20;i++) {
+                    std::string tmp = "contact " + std::to_string(i+0);
+                    add_new_contact(tmp);
+                }
 
+                // open default contact
                 if (contacts->count() > 0) {
                     contacts->setCurrentRow(0);
                     open_chat_of_contact(contacts->currentItem());
                 }
 
+                contacts->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff); // default rule for scrollbar, more rules defined in timing function
                 sidemenu_layout->addWidget(contacts);
                 sidemenu->setLayout(sidemenu_layout);
+
+                // set style for contacts scrolling
+                contacts->setStyleSheet(R"(
+                    QScrollBar:vertical {
+                        background: transparent;
+                        width: 5px;
+                        margin: 0px;
+                        border-radius: 5px;
+                    }
+                
+                    QScrollBar::handle:vertical {
+                        background: #666666;
+                        min-height: 20px;
+                    }
+                
+                    QScrollBar::handle:vertical:hover {
+                        background: #777777;
+                    }
+
+                    QScrollBar::add-line:vertical,
+                    QScrollBar::sub-line:vertical {
+                        height: 0px;
+                    }
+                
+                    QScrollBar::add-page:vertical,
+                    QScrollBar::sub-page:vertical {
+                        background: none;
+                    })");
+
+                // add empty space at the bottom
+                QWidget *bottomSpacer = new QWidget();
+                bottomSpacer->setFixedHeight(45);  // empty space for less clattered look
+                sidemenu_layout->addWidget(bottomSpacer);
 
                 // define the textbox to write new messages + the send button (horizontal layout)
                 QHBoxLayout *hlayout = new QHBoxLayout();
                 textbox = new QTextEdit(this);
-                textbox->setFixedHeight(50); // TODO: make this number depend on dimensions of screen
+                textbox->setFixedHeight(45); // same as send_button
                 textbox->setStyleSheet(styler_filename);
                 textbox->setPlaceholderText("Enter Text Message Here...");
 
@@ -141,10 +189,13 @@ class Desktop : public QWidget, public GUI
                 textbox->setFont(GUI::font);
 
                 QPushButton *send_button = new QPushButton(this);
-                send_button->setText("Send");
-                send_button->setFont(GUI::font);
-                send_button->setFixedHeight(50); // TODO: make this number depend on dimensions of screen
+                send_button->setFixedHeight(45); // TODO: make this number depend on dimensions of screen (not app window size)
                 send_button->setStyleSheet(styler_filename);
+
+                // add send button icon 
+                send_button->setIcon(get_send_button());
+                send_button->setIconSize(QSize(30, 26));
+
                 hlayout->addWidget(textbox);
                 hlayout->addWidget(send_button);
 
@@ -152,14 +203,98 @@ class Desktop : public QWidget, public GUI
                 layout->addLayout(hlayout);
 
                 // make size of contacts sidebar adjustable by mouse
-                // TODO: add stylesheet for splitter
                 QSplitter* splitter = new QSplitter(Qt::Horizontal, this);
                 splitter->addWidget(sidemenu);
                 splitter->addWidget(layout_widget);
+                splitter->setSizes({150, layout_widget->width()});
                 main_layout->addWidget(splitter);
 
                 // connect the button and the message sender
                 connect(send_button, &QPushButton::clicked, this, &Desktop::send_text_message);
+                splitter->setSizes({150, width()-150});
+                set_1s_timer_scrollbar(contacts);
+            }
+
+            // get send button based on theme
+            static QIcon get_send_button()
+            {
+                // set icon of send button
+                QIcon icon;
+                if(is_dark_theme) {
+                    // inverse the colors
+                    QPixmap pixmap("../symbols/send_symbol.png"); // the symbol is for light theme
+                    QImage img = pixmap.toImage();
+                    img.invertPixels();
+                    icon = QIcon(QPixmap::fromImage(img));
+                } else {
+                    icon = QIcon("../symbols/send_symbol.png");
+                }
+                return icon;
+            }
+
+            // scrollbar should dissapear after a second of no use
+            void set_1s_timer_scrollbar(QListWidget *contacts)
+            {
+                QTimer *timer = new QTimer(this); // for textbox scrollbar
+                QTimer *timer2 = new QTimer(this); // for chat history scrollbar
+                QTimer *timer3 = new QTimer(this); // for contacts scrollbar
+                timer->setSingleShot(true);
+                timer2->setSingleShot(true);
+                timer3->setSingleShot(true);
+                
+                // show scrollbar for 1 second for textbox
+                auto show_scrollbar_temp1 = [this, timer]() {
+                    this->textbox->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+                    timer->start(1000);
+                };
+                
+                // hide again after a second
+                connect(timer, &QTimer::timeout, [this]() {
+                    textbox->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                });
+
+                // show when typing or scrolling with mouse
+                connect(textbox, &QTextEdit::textChanged, show_scrollbar_temp1);
+                if(textbox->verticalScrollBar()) {
+                    connect(textbox->verticalScrollBar(), &QScrollBar::valueChanged, show_scrollbar_temp1);
+                }
+
+                // chat history scroller
+                QScrollArea *scrollarea = qobject_cast<QScrollArea*>(chat_history->parentWidget()->parentWidget()->parentWidget());
+                QScrollBar *scroller = scrollarea->verticalScrollBar();
+                
+                // hide again after a second
+                connect(timer2, &QTimer::timeout, [scrollarea]() {
+                    scrollarea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                });
+
+                // show scrollbar for 1 second
+                auto show_scrollbar_temp2 = [scrollarea, timer2]() {
+                    scrollarea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+                    timer2->start(1000);
+                };
+
+                // show when typing or scrolling with mouse
+                connect(scroller, &QScrollBar::valueChanged, show_scrollbar_temp2);
+
+                // contacts scrollbar
+                QScrollBar *scroller_contacts = contacts->verticalScrollBar();
+                if (scroller_contacts) {
+                
+                    // hide again after a second
+                    connect(timer3, &QTimer::timeout, [contacts]() {
+                        contacts->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                    });
+
+                    // show scrollbar for 1 second
+                    auto show_scrollbar_temp3 = [contacts, timer3]() {
+                        contacts->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+                        timer3->start(1000);
+                    };
+
+                    // show when typing or scrolling with mouse
+                    connect(scroller_contacts, &QScrollBar::valueChanged, show_scrollbar_temp3);
+                }
             }
 
             // add new contact
@@ -168,6 +303,7 @@ class Desktop : public QWidget, public GUI
             void add_new_contact(std::string contact_name)
             {
                 QScrollArea *scroller = new QScrollArea(this);
+                scroller->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff); // default rule for scrollbar, more rules defined in timing function
                 scroller->setWidgetResizable(true);
                 QWidget *chat_view = new QWidget(scroller);
                 

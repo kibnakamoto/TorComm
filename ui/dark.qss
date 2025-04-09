@@ -4,8 +4,7 @@ QWidget {
 }
 
 QPushButton {
-    background-color: #3e3e42;
-    border: 1px solid #5a5a5a;
+    background-color: #2d2d30;
     color: white;
 }
 
@@ -41,6 +40,6 @@ QScrollBar:vertical:disabled {
 }
 
 QScrollBar::groove:vertical {
-    background: transparent;  /* Hide groove line */
+    background: transparent;
 }
 
