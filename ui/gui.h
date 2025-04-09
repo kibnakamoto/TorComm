@@ -129,15 +129,6 @@ class Desktop : public QWidget, public GUI
                 contacts->setFont(QFont(GUI::font_title.family(), GUI::font_title.pointSize()));
                 connect(contacts, &QListWidget::itemClicked, this, &Desktop::open_chat_of_contact);
 
-
-                textbox = new QTextEdit(this);
-                textbox->setFixedHeight(45); // same as send_button
-                textbox->setStyleSheet(styler_filename);
-                textbox->setPlaceholderText("Enter Text Message Here...");
-
-                // set scrollbar timers
-                set_1s_timer_scrollbar();
-
                 // example contact, should be loaded from a file
                 add_new_contact("contact 1");
                 add_new_contact("contact 2");
@@ -191,9 +182,50 @@ class Desktop : public QWidget, public GUI
 
                 // define the textbox to write new messages + the send button (horizontal layout)
                 QHBoxLayout *hlayout = new QHBoxLayout();
+                textbox = new QTextEdit(this);
+                textbox->setFixedHeight(45); // same as send_button
+                textbox->setStyleSheet(styler_filename);
+                textbox->setPlaceholderText("Enter Text Message Here...");
 
                 // set font size of textbox
                 textbox->setFont(GUI::font);
+
+                // same as chat history but different width
+                textbox->setStyleSheet(R"(
+                    QScrollBar:vertical {
+                        background: transparent;
+                        width: 7px;        
+                        margin: 0px;        
+                        border-radius: 3px; 
+                    }
+                    
+                    QScrollBar::handle:vertical {
+                        background: #888;  
+                        min-height: 30px;  
+                        border-radius: 3px;
+                        max-height: 70px;  
+                    }
+                    
+                    QScrollBar::handle:vertical:hover {
+                        background: #555;
+                    }
+                    
+                    /* Arrows */
+                    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                        background: transparent;
+                        border: none;
+                    }
+                    
+                    QScrollBar:vertical:disabled {
+                        background: transparent; 
+                    }
+                    
+                    QScrollBar::groove:vertical {
+                        background: transparent;
+                    }
+
+
+                )");
 
                 QPushButton *send_button = new QPushButton(this);
                 send_button->setFixedHeight(45); // TODO: make this number depend on dimensions of screen (not app window size)
@@ -219,6 +251,9 @@ class Desktop : public QWidget, public GUI
                 // connect the button and the message sender
                 connect(send_button, &QPushButton::clicked, this, &Desktop::send_text_message);
                 splitter->setSizes({150, width()-150});
+
+                // set scrollbar timers
+                set_1s_timer_scrollbar();
             }
 
             // get send button based on theme
@@ -248,9 +283,9 @@ class Desktop : public QWidget, public GUI
                 QScrollBar *scroller;
                 ScrollerFade(T widget, QScrollBar *scroller, QWidget *parent) : widget(widget)
                 {
+                    this->scroller = scroller;
                     this->timer = new QTimer(parent);
                     timer->setSingleShot(true);
-                    this->scroller = scroller;
                     fader = static_cast<Desktop*>(parent)->fade(scroller, opacity);
 
                     // hide again after a second
@@ -259,7 +294,7 @@ class Desktop : public QWidget, public GUI
                     });
                 }
 
-
+                // parameter of connect function to fade when typing and/or scrolling
                 std::function<void()> show_scrollbar_temp_f = [this]() {
                     widget->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
                     opacity->setOpacity(1.0); // reset to visible if its currently fading
@@ -272,7 +307,7 @@ class Desktop : public QWidget, public GUI
             std::map<QVBoxLayout*, ScrollerFade<QScrollArea*>*> scroller_fade2; // for chat history
             ScrollerFade<QListWidget*> *scroller_fade3; // for contacts
 
-            // scrollbar should dissapear after a second of no use
+            // scrollbar should dissapear after a second of no use (this doesn't include chat history, that is already made in add_new_contact)
             void set_1s_timer_scrollbar()
             {
                 // textbox scroller
@@ -284,14 +319,6 @@ class Desktop : public QWidget, public GUI
                     connect(textbox->verticalScrollBar(), &QScrollBar::valueChanged, this->scroller_fade1->show_scrollbar_temp_f);
                 }
 
-                // chat history scroller
-                // QScrollArea *scrollarea = qobject_cast<QScrollArea*>(chat_history->parentWidget()->parentWidget()->parentWidget());
-                // QScrollBar *scroller = scrollarea->verticalScrollBar();
-                // this->scroller_fade2 = new ScrollerFade<QScrollArea*>(scrollarea, scroller, this);
-
-                // // show when scrolling with mouse
-                // connect(scroller, &QScrollBar::valueChanged, this->scroller_fade2->show_scrollbar_temp_f);
-
                 // contacts scrollbar
                 QScrollBar *scroller_contacts = contacts->verticalScrollBar();
                 this->scroller_fade3 = new ScrollerFade<QListWidget*>(contacts, scroller_contacts, this);
@@ -302,7 +329,6 @@ class Desktop : public QWidget, public GUI
                 // add rule for all scrollers to show when mouse hovers over them
                 scroller_contacts->installEventFilter(this);
                 textbox->verticalScrollBar()->installEventFilter(this);
-                //scroller->installEventFilter(this);
             }
 
             // make a widget fade
