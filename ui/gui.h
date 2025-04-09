@@ -39,6 +39,8 @@
 #include <QObject>
 #include <QStackedWidget>
 #include <QTimer>
+#include <QPropertyAnimation>
+#include <QGraphicsOpacityEffect>
 
 #include <iostream>
 #include <string>
@@ -127,6 +129,15 @@ class Desktop : public QWidget, public GUI
                 contacts->setFont(QFont(GUI::font_title.family(), GUI::font_title.pointSize()));
                 connect(contacts, &QListWidget::itemClicked, this, &Desktop::open_chat_of_contact);
 
+
+                textbox = new QTextEdit(this);
+                textbox->setFixedHeight(45); // same as send_button
+                textbox->setStyleSheet(styler_filename);
+                textbox->setPlaceholderText("Enter Text Message Here...");
+
+                // set scrollbar timers
+                set_1s_timer_scrollbar();
+
                 // example contact, should be loaded from a file
                 add_new_contact("contact 1");
                 add_new_contact("contact 2");
@@ -180,10 +191,6 @@ class Desktop : public QWidget, public GUI
 
                 // define the textbox to write new messages + the send button (horizontal layout)
                 QHBoxLayout *hlayout = new QHBoxLayout();
-                textbox = new QTextEdit(this);
-                textbox->setFixedHeight(45); // same as send_button
-                textbox->setStyleSheet(styler_filename);
-                textbox->setPlaceholderText("Enter Text Message Here...");
 
                 // set font size of textbox
                 textbox->setFont(GUI::font);
@@ -212,7 +219,6 @@ class Desktop : public QWidget, public GUI
                 // connect the button and the message sender
                 connect(send_button, &QPushButton::clicked, this, &Desktop::send_text_message);
                 splitter->setSizes({150, width()-150});
-                set_1s_timer_scrollbar(contacts);
             }
 
             // get send button based on theme
@@ -232,69 +238,112 @@ class Desktop : public QWidget, public GUI
                 return icon;
             }
 
-            // scrollbar should dissapear after a second of no use
-            void set_1s_timer_scrollbar(QListWidget *contacts)
+            template<typename T>
+            struct ScrollerFade
             {
-                QTimer *timer = new QTimer(this); // for textbox scrollbar
-                QTimer *timer2 = new QTimer(this); // for chat history scrollbar
-                QTimer *timer3 = new QTimer(this); // for contacts scrollbar
-                timer->setSingleShot(true);
-                timer2->setSingleShot(true);
-                timer3->setSingleShot(true);
-                
-                // show scrollbar for 1 second for textbox
-                auto show_scrollbar_temp1 = [this, timer]() {
-                    this->textbox->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+                T widget;
+                QTimer *timer;
+                QPropertyAnimation *fader;
+                QGraphicsOpacityEffect *opacity;
+                QScrollBar *scroller;
+                ScrollerFade(T widget, QScrollBar *scroller, QWidget *parent) : widget(widget)
+                {
+                    this->timer = new QTimer(parent);
+                    timer->setSingleShot(true);
+                    this->scroller = scroller;
+                    fader = static_cast<Desktop*>(parent)->fade(scroller, opacity);
+
+                    // hide again after a second
+                    connect(timer, &QTimer::timeout, [this]() {
+                        fader->start();
+                    });
+                }
+
+
+                std::function<void()> show_scrollbar_temp_f = [this]() {
+                    widget->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+                    opacity->setOpacity(1.0); // reset to visible if its currently fading
+                    fader->stop(); // stop any ongoing animation
                     timer->start(1000);
                 };
-                
-                // hide again after a second
-                connect(timer, &QTimer::timeout, [this]() {
-                    textbox->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-                });
+            };
+
+            ScrollerFade<QTextEdit*> *scroller_fade1;   // for textbox
+            std::map<QVBoxLayout*, ScrollerFade<QScrollArea*>*> scroller_fade2; // for chat history
+            ScrollerFade<QListWidget*> *scroller_fade3; // for contacts
+
+            // scrollbar should dissapear after a second of no use
+            void set_1s_timer_scrollbar()
+            {
+                // textbox scroller
+                this->scroller_fade1 = new ScrollerFade<QTextEdit*>(this->textbox, textbox->verticalScrollBar(), this);
 
                 // show when typing or scrolling with mouse
-                connect(textbox, &QTextEdit::textChanged, show_scrollbar_temp1);
+                connect(textbox, &QTextEdit::textChanged, this->scroller_fade1->show_scrollbar_temp_f);
                 if(textbox->verticalScrollBar()) {
-                    connect(textbox->verticalScrollBar(), &QScrollBar::valueChanged, show_scrollbar_temp1);
+                    connect(textbox->verticalScrollBar(), &QScrollBar::valueChanged, this->scroller_fade1->show_scrollbar_temp_f);
                 }
 
                 // chat history scroller
-                QScrollArea *scrollarea = qobject_cast<QScrollArea*>(chat_history->parentWidget()->parentWidget()->parentWidget());
-                QScrollBar *scroller = scrollarea->verticalScrollBar();
-                
-                // hide again after a second
-                connect(timer2, &QTimer::timeout, [scrollarea]() {
-                    scrollarea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-                });
+                // QScrollArea *scrollarea = qobject_cast<QScrollArea*>(chat_history->parentWidget()->parentWidget()->parentWidget());
+                // QScrollBar *scroller = scrollarea->verticalScrollBar();
+                // this->scroller_fade2 = new ScrollerFade<QScrollArea*>(scrollarea, scroller, this);
 
-                // show scrollbar for 1 second
-                auto show_scrollbar_temp2 = [scrollarea, timer2]() {
-                    scrollarea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
-                    timer2->start(1000);
-                };
-
-                // show when typing or scrolling with mouse
-                connect(scroller, &QScrollBar::valueChanged, show_scrollbar_temp2);
+                // // show when scrolling with mouse
+                // connect(scroller, &QScrollBar::valueChanged, this->scroller_fade2->show_scrollbar_temp_f);
 
                 // contacts scrollbar
                 QScrollBar *scroller_contacts = contacts->verticalScrollBar();
-                if (scroller_contacts) {
-                
-                    // hide again after a second
-                    connect(timer3, &QTimer::timeout, [contacts]() {
-                        contacts->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-                    });
+                this->scroller_fade3 = new ScrollerFade<QListWidget*>(contacts, scroller_contacts, this);
 
-                    // show scrollbar for 1 second
-                    auto show_scrollbar_temp3 = [contacts, timer3]() {
-                        contacts->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
-                        timer3->start(1000);
-                    };
+                // show when scrolling with mouse
+                connect(scroller_contacts, &QScrollBar::valueChanged, this->scroller_fade3->show_scrollbar_temp_f);
 
-                    // show when typing or scrolling with mouse
-                    connect(scroller_contacts, &QScrollBar::valueChanged, show_scrollbar_temp3);
+                // add rule for all scrollers to show when mouse hovers over them
+                scroller_contacts->installEventFilter(this);
+                textbox->verticalScrollBar()->installEventFilter(this);
+                //scroller->installEventFilter(this);
+            }
+
+            // make a widget fade
+            // opacity: arguement, shouldn't be set to anything.
+            QPropertyAnimation *fade(QWidget *widget, QGraphicsOpacityEffect *&opacity)
+            {
+                // fade the widget
+                opacity = new QGraphicsOpacityEffect(widget);
+                widget->setGraphicsEffect(opacity);
+                opacity->setOpacity(1.0); // initially visible
+            
+                // Animation setup
+                QPropertyAnimation *fader = new QPropertyAnimation(opacity, "opacity");
+                fader->setDuration(500); // fades for 500ms
+                fader->setStartValue(1.0);
+                fader->setEndValue(0.0);
+                return fader;
+            }
+
+            // event filter to make scroller visible when moved mouse over it
+            bool eventFilter(QObject *watched, QEvent *event)
+            {
+                // scrollers
+                QScrollBar *textbox_scroller = textbox->verticalScrollBar();
+                QScrollArea *chat_history_scrollarea = qobject_cast<QScrollArea*>(chat_history->parentWidget()->parentWidget()->parentWidget());
+                QScrollBar *chat_history_scroller = chat_history_scrollarea->verticalScrollBar();
+                QScrollBar *contacts_scroller = contacts->verticalScrollBar();
+
+                // for textbox, chat history, and contacts
+                if (watched == textbox_scroller && event->type() == QEvent::Enter) {
+                    scroller_fade1->show_scrollbar_temp_f();
+                    return true;
+                } else if (watched == chat_history_scroller && event->type() == QEvent::Enter) {
+                    scroller_fade2[chat_history]->show_scrollbar_temp_f();
+                    return true;
+                } else if (watched == contacts_scroller && event->type() == QEvent::Enter) {
+                    scroller_fade3->show_scrollbar_temp_f();
+                    return true;
                 }
+
+                return QWidget::eventFilter(watched, event);
             }
 
             // add new contact
@@ -313,6 +362,13 @@ class Desktop : public QWidget, public GUI
                 scroller->setWidget(chat_view);
                 chat_histories[contact_name] = scroller;
                 chat_history_stack->addWidget(scroller);
+
+                // add scroller fade
+                scroller_fade2[new_chat_history] = new ScrollerFade<QScrollArea*>(scroller, scroller->verticalScrollBar(), this);
+
+                // show when scrolling with mouse
+                connect(scroller->verticalScrollBar(), &QScrollBar::valueChanged, scroller_fade2[new_chat_history]->show_scrollbar_temp_f);
+                scroller->verticalScrollBar()->installEventFilter(this);
             }
 
     private slots:
