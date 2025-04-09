@@ -53,13 +53,6 @@
 // TODO: Make a cipher suite selector
 
 
-// TODO: use this for chat_histories values. draft should be written to textbox as a default value every time contacts is changed.
-struct ScrollerAndDraft
-{
-    std::string draft;
-    QScrollArea *scroller;
-};
-
 class Desktop : public QWidget, public GUI
 {
     Q_OBJECT // macro to enable slots
@@ -73,12 +66,27 @@ class Desktop : public QWidget, public GUI
             app->setStyleSheet(styleSheet);
         }
     }
+
+    // this is used for chat_histories values. draft is written to textbox as a default value every time contacts is changed.
+    struct ScrollerAndDraft
+    {
+        std::string draft;
+        QScrollArea *scroller;
+
+        ScrollerAndDraft(std::string draft, QScrollArea *scroller)
+        {
+            this->scroller = scroller;
+            this->draft = draft;
+        } 
+    };
+
     QApplication *app;
     QTextEdit *textbox; // user input (enter to chat history)
     inline static const char *styler_filename; // e.g. dark.qss
-    inline static std::map<std::string, QScrollArea*> chat_histories; // chat history per contact
+    inline static std::map<std::string, ScrollerAndDraft*> chat_histories; // chat history per contact
     inline static QListWidget *contacts;
     QVBoxLayout *chat_history; // currently selected chat_history
+    std::string current_contact;
     QStackedWidget *chat_history_stack;
 
     public:
@@ -122,6 +130,14 @@ class Desktop : public QWidget, public GUI
                 sidemenu->setMaximumWidth(300);
                 sidemenu->setMinimumWidth(100);
 
+
+
+
+                textbox = new QTextEdit(this);
+
+
+
+
                 // add contacts to side bar
                 contacts = new QListWidget(sidemenu);
                 contacts->setMaximumWidth(300);
@@ -132,8 +148,8 @@ class Desktop : public QWidget, public GUI
                 // example contact, should be loaded from a file
                 add_new_contact("contact 1");
                 add_new_contact("contact 2");
-                for(char i=3;i<20;i++) {
-                    std::string tmp = "contact " + std::to_string(i+0);
+                for(int i=3;i<20;i++) {
+                    std::string tmp = "contact " + std::to_string(i);
                     add_new_contact(tmp);
                 }
 
@@ -182,7 +198,6 @@ class Desktop : public QWidget, public GUI
 
                 // define the textbox to write new messages + the send button (horizontal layout)
                 QHBoxLayout *hlayout = new QHBoxLayout();
-                textbox = new QTextEdit(this);
                 textbox->setFixedHeight(45); // same as send_button
                 textbox->setStyleSheet(styler_filename);
                 textbox->setPlaceholderText("Enter Text Message Here...");
@@ -340,7 +355,7 @@ class Desktop : public QWidget, public GUI
                 widget->setGraphicsEffect(opacity);
                 opacity->setOpacity(1.0); // initially visible
             
-                // Animation setup
+                // animation setup
                 QPropertyAnimation *fader = new QPropertyAnimation(opacity, "opacity");
                 fader->setDuration(500); // fades for 500ms
                 fader->setStartValue(1.0);
@@ -386,8 +401,10 @@ class Desktop : public QWidget, public GUI
                 contacts->addItem(contact_name.c_str());
                 chat_view->setLayout(new_chat_history);
                 scroller->setWidget(chat_view);
-                chat_histories[contact_name] = scroller;
                 chat_history_stack->addWidget(scroller);
+
+                // save message draft in textbox by contact
+                chat_histories[contact_name] = new ScrollerAndDraft("", scroller);
 
                 // add scroller fade
                 scroller_fade2[new_chat_history] = new ScrollerFade<QScrollArea*>(scroller, scroller->verticalScrollBar(), this);
@@ -398,18 +415,25 @@ class Desktop : public QWidget, public GUI
             }
 
     private slots:
-            // when clicked on contact, show chat_history
+            // when clicked on contact
             void open_chat_of_contact(QListWidgetItem *item)
             {
                 std::string contact = item->text().toStdString(); // name of contact
                 
                 // get contact and place chat history
-                QScrollArea *open_chat_history = chat_histories.at(contact); // QScrollerArea
+                ScrollerAndDraft *historyndraft = chat_histories[contact];
+
+                // set the previous contacts message in textbox (draft)
+                if(!current_contact.empty())
+                    chat_histories[current_contact]->draft = textbox->toPlainText().toStdString();
+
+                // set saved draft text for this contact
+                textbox->setText(historyndraft->draft.c_str());
                 
                 // store this for later use when switching
-                chat_history_stack->setCurrentWidget(open_chat_history);
-                //chat_history = open_chat_history; // assing new chat_history
-                chat_history = qobject_cast<QVBoxLayout*>(open_chat_history->widget()->layout());
+                chat_history_stack->setCurrentWidget(historyndraft->scroller);
+                chat_history = qobject_cast<QVBoxLayout*>(historyndraft->scroller->widget()->layout());
+                current_contact = contact; // set current contact
             }
 
             // only to send text messages
@@ -422,8 +446,6 @@ class Desktop : public QWidget, public GUI
                     label->setStyleSheet("background-color: #224466; border-radius: 10px; padding: 10px; margin: 5px; max-width: 300px;");
                     label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
                     label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed); // stop size from resizing
-                    // label->setFixedHeight(label->sizeHint().height());  // Ensures the label has a fixed height
-                    // label->setFixedWidth(label->sizeHint().width());  // Ensures the label has a fixed height
                     chat_history->addStretch(1); // places the text to the top of selected chat_history
 
                     // stop resizing per message added, scroll if needed
@@ -441,7 +463,6 @@ class Desktop : public QWidget, public GUI
                     chat_history->addWidget(wrapper_w);
 
                     // Scroll to the bottom of the texts (as new texts are added)
-                    //QScrollBar *scrollbar = chat_history->parentWidget()->findChild<QScrollBar*>();
                     QScrollArea *scrollarea = qobject_cast<QScrollArea*>(parent->parentWidget()->parentWidget());
                     if(scrollarea) {
                         QScrollBar *scrollbar = scrollarea->verticalScrollBar();
@@ -465,14 +486,11 @@ class Desktop : public QWidget, public GUI
             {
                 if(is_dark_theme) {
                     style_sheet("../dark.qss"); // in build folder
-                    
                 } else { // light theme
                     // TODO: implement light.qss, light theme not supported yet
                     style_sheet("../light.qss");
-                    
                 }
             }
-
 
             // Ask a question (e.g. are you sure you want to close app?)
             // use switch case to handle question (save, discard, cancel)
