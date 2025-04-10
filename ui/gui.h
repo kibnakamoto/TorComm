@@ -155,12 +155,17 @@ class Desktop : public QWidget, public GUI
                 contacts_bar->addWidget(search_button);
                 contacts_bar->addWidget(search_contacts);
                 connect(search_contacts, &QLineEdit::textChanged, this, &Desktop::contacts_filter);
-                connect(search_button, &QPushButton::clicked, this, &Desktop::showSearchBar);
+                connect(search_button, &QPushButton::clicked, this, &Desktop::show_search_contacts);
                 QTimer::singleShot(0, this, [this]() { // fixes segmentation fault regarding search contacts object creation
                     search_contacts->installEventFilter(this);
                 });
                 search_button->setIcon(search_button_icon);
-                search_button->setIconSize(QSize(25,25));
+                search_button->setIconSize(QSize(20, 20));
+                search_button->setFixedWidth(30);
+
+                // set fixed height for both button and search bar so that contacts list don't move when switching between them
+                search_button->setFixedHeight(30);
+                search_contacts->setFixedHeight(30);
                 
                 // add contacts label + search bar to sidemenu (above contacts list)
                 sidemenu_layout->addLayout(contacts_bar);
@@ -410,8 +415,8 @@ class Desktop : public QWidget, public GUI
                     scroller_fade3->show_scrollbar_temp_f();
                     return true;
                 } else if (watched == search_contacts && event->type() == QEvent::FocusOut) {
-                    // toggle_search_bar();
-                    hideSearchBar();
+                    if(textbox->hasFocus()) // un-search if user is typing
+                        hide_search_contacts();
                 }
 
                 return QWidget::eventFilter(watched, event);
@@ -445,32 +450,19 @@ class Desktop : public QWidget, public GUI
             }
 
     private slots:
-            void showSearchBar() {
+            // show search contacts when clicked on button
+            void show_search_contacts() {
                 search_button->hide();
                 search_contacts->show();
                 search_contacts->setFocus();
             }
 
-            void hideSearchBar() {
+            // hide search contacts when unfocused
+            void hide_search_contacts() {
                 search_contacts->hide();
                 search_contacts->clear();
                 search_button->show();
-                contacts_filter("");
-            }
-
-
-            // search button, if clicked, toggle search bar
-            void toggle_search_bar()
-            {
-                 search_contacts->setVisible(!search_contacts->isVisible());
-                 if (search_contacts->isVisible()) {
-                     search_button->setVisible(false);
-                     search_contacts->setFocus();
-                 } else {
-                     search_button->setVisible(true);
-                     search_contacts->clear();
-                     contacts_filter("");
-                 }
+                contacts_filter(""); // reset contacts list (make it all visible)
             }
 
             // handle search bar for contacts
@@ -480,12 +472,21 @@ class Desktop : public QWidget, public GUI
                     QListWidgetItem *item = contacts->item(i);
                     bool found = item->text().toLower().contains(input.toLower()); // find input, ignore case
                     item->setHidden(!found); // hide if not found
+
+                    // Allow selection of visible items only
+                    if (!item->isHidden()) {
+                        item->setFlags(item->flags() | Qt::ItemIsSelectable);  // Make sure item is selectable
+                    } else {
+                        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);  // Disable selection for hidden items
+                    }
                 }
             }
 
             // when clicked on contact
             void open_chat_of_contact(QListWidgetItem *item)
             {
+                hide_search_contacts(); // reset search bar after selecting
+
                 std::string contact = item->text().toStdString(); // name of contact
                 
                 // get contact and place chat history
