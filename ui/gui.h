@@ -41,6 +41,7 @@
 #include <QTimer>
 #include <QPropertyAnimation>
 #include <QGraphicsOpacityEffect>
+#include <QLineEdit>
 
 #include <iostream>
 #include <string>
@@ -88,6 +89,8 @@ class Desktop : public QWidget, public GUI
     QVBoxLayout *chat_history; // currently selected chat_history
     std::string current_contact;
     QStackedWidget *chat_history_stack;
+    QLineEdit *search_contacts; // search bar for contacts
+    QPushButton *search_button; // search bar toggle button
 
     public:
             // default constructor
@@ -118,24 +121,93 @@ class Desktop : public QWidget, public GUI
                 chat_history_stack = new QStackedWidget(this);
                 layout->addWidget(chat_history_stack);
 
+                // set icons
+                QIcon send_button_icon;
+                QIcon search_button_icon;
+                if(is_dark_theme) {
+                    get_inverse_icon_symbol(send_button_icon, "../symbols/send_symbol.png");
+                    get_inverse_icon_symbol(search_button_icon, "../symbols/search_symbol.png");
+                } else {
+                    get_icon_symbol(send_button_icon, "../symbols/send_symbol.png");
+                    get_icon_symbol(send_button_icon, "../symbols/search_symbol.png");
+                    
+                }
+
+
                 // add contacts side bar menu
                 QWidget *sidemenu = new QWidget(this);
                 QVBoxLayout *sidemenu_layout = new QVBoxLayout(sidemenu);
-
-                // add contacts label to sidemenu
-                QLabel *label_contacts = new QLabel();
-                label_contacts->setText("Contacts");
-                label_contacts->setFont(GUI::font_title);
-                sidemenu_layout->addWidget(label_contacts);
                 sidemenu->setMaximumWidth(300);
                 sidemenu->setMinimumWidth(100);
 
+                // add contacts label to sidemenu
+                QLabel *label_contacts = new QLabel();
+                QHBoxLayout *contacts_bar = new QHBoxLayout();
+                label_contacts->setText("Contacts");
+                label_contacts->setFont(GUI::font_title);
+                contacts_bar->addWidget(label_contacts);
 
+                // add search bar for contacts
+                search_button = new QPushButton(this);
+                search_contacts = new QLineEdit(this);
+                search_contacts->setPlaceholderText("Find Contact...");
+                search_contacts->setVisible(false);
+                contacts_bar->addWidget(search_button);
+                contacts_bar->addWidget(search_contacts);
+                connect(search_contacts, &QLineEdit::textChanged, this, &Desktop::contacts_filter);
+                connect(search_button, &QPushButton::clicked, this, &Desktop::showSearchBar);
+                QTimer::singleShot(0, this, [this]() { // fixes segmentation fault regarding search contacts object creation
+                    search_contacts->installEventFilter(this);
+                });
+                search_button->setIcon(search_button_icon);
+                search_button->setIconSize(QSize(25,25));
+                
+                // add contacts label + search bar to sidemenu (above contacts list)
+                sidemenu_layout->addLayout(contacts_bar);
 
-
+                // initialize textbox here since it's needed for added contacts (saving draft messages in chat_histories)
                 textbox = new QTextEdit(this);
+                textbox->setFixedHeight(44); // same as send_button
+                textbox->setStyleSheet(styler_filename);
+                textbox->setPlaceholderText("Enter Text Message Here...");
+                textbox->setFont(GUI::font);
+
+                // same as chat history but different width
+                textbox->setStyleSheet(R"(
+                    QScrollBar:vertical {
+                        background: transparent;
+                        width: 7px;        
+                        margin: 0px;        
+                        border-radius: 3px; 
+                    }
+                    
+                    QScrollBar::handle:vertical {
+                        background: #888;  
+                        min-height: 30px;  
+                        border-radius: 3px;
+                        max-height: 70px;  
+                    }
+                    
+                    QScrollBar::handle:vertical:hover {
+                        background: #555;
+                    }
+                    
+                    /* Arrows */
+                    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                        background: transparent;
+                        border: none;
+                    }
+                    
+                    QScrollBar:vertical:disabled {
+                        background: transparent; 
+                    }
+                    
+                    QScrollBar::groove:vertical {
+                        background: transparent;
+                    }
 
 
+                )");
 
 
                 // add contacts to side bar
@@ -198,56 +270,12 @@ class Desktop : public QWidget, public GUI
 
                 // define the textbox to write new messages + the send button (horizontal layout)
                 QHBoxLayout *hlayout = new QHBoxLayout();
-                textbox->setFixedHeight(45); // same as send_button
-                textbox->setStyleSheet(styler_filename);
-                textbox->setPlaceholderText("Enter Text Message Here...");
-
-                // set font size of textbox
-                textbox->setFont(GUI::font);
-
-                // same as chat history but different width
-                textbox->setStyleSheet(R"(
-                    QScrollBar:vertical {
-                        background: transparent;
-                        width: 7px;        
-                        margin: 0px;        
-                        border-radius: 3px; 
-                    }
-                    
-                    QScrollBar::handle:vertical {
-                        background: #888;  
-                        min-height: 30px;  
-                        border-radius: 3px;
-                        max-height: 70px;  
-                    }
-                    
-                    QScrollBar::handle:vertical:hover {
-                        background: #555;
-                    }
-                    
-                    /* Arrows */
-                    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                        background: transparent;
-                        border: none;
-                    }
-                    
-                    QScrollBar:vertical:disabled {
-                        background: transparent; 
-                    }
-                    
-                    QScrollBar::groove:vertical {
-                        background: transparent;
-                    }
-
-
-                )");
-
                 QPushButton *send_button = new QPushButton(this);
                 send_button->setFixedHeight(45); // TODO: make this number depend on dimensions of screen (not app window size)
                 send_button->setStyleSheet(styler_filename);
 
                 // add send button icon 
-                send_button->setIcon(get_send_button());
+                send_button->setIcon(send_button_icon);
                 send_button->setIconSize(QSize(30, 26));
 
                 hlayout->addWidget(textbox);
@@ -271,21 +299,20 @@ class Desktop : public QWidget, public GUI
                 set_1s_timer_scrollbar();
             }
 
-            // get send button based on theme
-            static QIcon get_send_button()
+            // get symbol based on theme
+            static inline void get_icon_symbol(QIcon &icon, const char *icon_path)
             {
-                // set icon of send button
-                QIcon icon;
-                if(is_dark_theme) {
-                    // inverse the colors
-                    QPixmap pixmap("../symbols/send_symbol.png"); // the symbol is for light theme
-                    QImage img = pixmap.toImage();
-                    img.invertPixels();
-                    icon = QIcon(QPixmap::fromImage(img));
-                } else {
-                    icon = QIcon("../symbols/send_symbol.png");
-                }
-                return icon;
+                icon = QIcon(icon_path);
+            }
+
+            // get symbol based on theme (inverse dark button to make it light colored for visibility in dark theme)
+            static inline void get_inverse_icon_symbol(QIcon &icon, const char *icon_path)
+            {
+                // inverse the colors
+                QPixmap pixmap(icon_path); // the symbol is for light theme
+                QImage img = pixmap.toImage();
+                img.invertPixels();
+                icon = QIcon(QPixmap::fromImage(img));
             }
 
             template<typename T>
@@ -364,7 +391,7 @@ class Desktop : public QWidget, public GUI
             }
 
             // event filter to make scroller visible when moved mouse over it
-            bool eventFilter(QObject *watched, QEvent *event)
+            bool eventFilter(QObject *watched, QEvent *event) override
             {
                 // scrollers
                 QScrollBar *textbox_scroller = textbox->verticalScrollBar();
@@ -382,6 +409,9 @@ class Desktop : public QWidget, public GUI
                 } else if (watched == contacts_scroller && event->type() == QEvent::Enter) {
                     scroller_fade3->show_scrollbar_temp_f();
                     return true;
+                } else if (watched == search_contacts && event->type() == QEvent::FocusOut) {
+                    // toggle_search_bar();
+                    hideSearchBar();
                 }
 
                 return QWidget::eventFilter(watched, event);
@@ -415,6 +445,44 @@ class Desktop : public QWidget, public GUI
             }
 
     private slots:
+            void showSearchBar() {
+                search_button->hide();
+                search_contacts->show();
+                search_contacts->setFocus();
+            }
+
+            void hideSearchBar() {
+                search_contacts->hide();
+                search_contacts->clear();
+                search_button->show();
+                contacts_filter("");
+            }
+
+
+            // search button, if clicked, toggle search bar
+            void toggle_search_bar()
+            {
+                 search_contacts->setVisible(!search_contacts->isVisible());
+                 if (search_contacts->isVisible()) {
+                     search_button->setVisible(false);
+                     search_contacts->setFocus();
+                 } else {
+                     search_button->setVisible(true);
+                     search_contacts->clear();
+                     contacts_filter("");
+                 }
+            }
+
+            // handle search bar for contacts
+            void contacts_filter(const QString &input)
+            {
+                for(int i=0;i<contacts->count();i++) {
+                    QListWidgetItem *item = contacts->item(i);
+                    bool found = item->text().toLower().contains(input.toLower()); // find input, ignore case
+                    item->setHidden(!found); // hide if not found
+                }
+            }
+
             // when clicked on contact
             void open_chat_of_contact(QListWidgetItem *item)
             {
@@ -466,8 +534,7 @@ class Desktop : public QWidget, public GUI
                     QLabel *label = new QLabel(text); // text
                     label->setWordWrap(true);
                     label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-                    // label->setMaximumWidth(width()/2 - 50); // half of screen + 50px padding
-                    // label->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Minimum); // stop size from resizing
+                    label->setMaximumWidth(width()/2 - 25); // half of screen + 25px padding
                     chat_history->addStretch(1); // places the text to the top of selected chat_history
                 
                     // Resize label so that it fits to text
