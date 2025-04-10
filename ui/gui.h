@@ -440,13 +440,50 @@ class Desktop : public QWidget, public GUI
             void send_text_message()
             {
                 QString text = textbox->toPlainText().trimmed(); // get text
+
+                // add zero width space every 30 characters
+                auto add_zero_width_spaces = [](std::string str) {
+                    std::string out;
+                    uint8_t count = 0; // how many iterations without space
+                    for(size_t i=0;i<str.length();i++) {
+                        out+=str[i];
+                        if (str[i] != ' ')
+                            count++;
+                        else {
+                            count = 0; // reset counter if space found
+                        }
+
+                        if(count > 30) {
+                            out += "\xE2\x80\x8B"; // zero-width space
+                            count = 0; // reset counter after adding
+                        }
+                    }
+                    return out;
+                };
+                text = add_zero_width_spaces(text.toStdString()).c_str();
+
                 if (!text.isEmpty()) {
-                    QLabel *label = new QLabel(text);
+                    QLabel *label = new QLabel(text); // text
                     label->setWordWrap(true);
-                    label->setStyleSheet("background-color: #224466; border-radius: 10px; padding: 10px; margin: 5px; max-width: 300px;");
                     label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-                    label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed); // stop size from resizing
+                    // label->setMaximumWidth(width()/2 - 50); // half of screen + 50px padding
+                    // label->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Minimum); // stop size from resizing
                     chat_history->addStretch(1); // places the text to the top of selected chat_history
+                
+                    // Resize label so that it fits to text
+                    // label->adjustSize();
+
+                    
+                    // 3) Style it like a chat bubble
+                    label->setStyleSheet(R"(
+                        background-color: #224466;
+                        border-radius: 10px;
+                        padding: 10px;
+                        margin: 5px;
+                    )");
+                    
+                    // 4) Let it resize vertically to fit the text
+                    label->adjustSize();  // now its height == height needed to show all text
 
                     // stop resizing per message added, scroll if needed
                     QWidget *parent = chat_history->parentWidget();
