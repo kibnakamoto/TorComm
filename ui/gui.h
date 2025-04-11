@@ -124,13 +124,15 @@ class Desktop : public QWidget, public GUI
                 // set icons
                 QIcon send_button_icon;
                 QIcon search_button_icon;
+                QIcon file_button_icon;
                 if(is_dark_theme) {
                     get_inverse_icon_symbol(send_button_icon, "../symbols/send_symbol.png");
                     get_inverse_icon_symbol(search_button_icon, "../symbols/search_symbol.png");
+                    get_inverse_icon_symbol(file_button_icon, "../symbols/file_symbol.png");
                 } else {
                     get_icon_symbol(send_button_icon, "../symbols/send_symbol.png");
-                    get_icon_symbol(send_button_icon, "../symbols/search_symbol.png");
-                    
+                    get_icon_symbol(search_button_icon, "../symbols/search_symbol.png");
+                    get_icon_symbol(file_button_icon, "../symbols/file_symbol.png");
                 }
 
                 // add contacts side bar menu
@@ -288,17 +290,26 @@ class Desktop : public QWidget, public GUI
                 bottomSpacer->setFixedHeight(45);  // empty space for less clattered look
                 sidemenu_layout->addWidget(bottomSpacer);
 
-                // define the textbox to write new messages + the send button (horizontal layout)
+                // define the textbox to write new messages + file attacher + the send button (horizontal layout)
                 QHBoxLayout *hlayout = new QHBoxLayout();
                 QPushButton *send_button = new QPushButton(this);
                 send_button->setFixedHeight(45); // TODO: make this number depend on dimensions of screen (not app window size)
                 send_button->setStyleSheet(styler_filename);
+
+                // file attacher
+                QPushButton *file_attacher = new QPushButton(this);
+                file_attacher->setFixedSize(28, 45);
+                file_attacher->setStyleSheet(styler_filename);
+                file_attacher->setIcon(file_button_icon);
+                file_attacher->setIconSize(QSize(24, 45));
+                connect(file_attacher, &QPushButton::clicked, this, &Desktop::attach_file);
 
                 // add send button icon 
                 send_button->setIcon(send_button_icon);
                 send_button->setIconSize(QSize(30, 26));
 
                 hlayout->addWidget(textbox);
+                hlayout->addWidget(file_attacher);
                 hlayout->addWidget(send_button);
 
                 // add the text box + send button to the layout with chat history
@@ -327,6 +338,21 @@ class Desktop : public QWidget, public GUI
                     }
                 });
 #pragma GCC diagnostic pop
+            }
+
+            // attach file from file selector
+            void attach_file()
+            {
+                // select file(s) from system file selector
+                // theme of file selector is controlled by the system
+                QStringList selected_files = QFileDialog::getOpenFileNames(this, "Select files", QString(),
+                                                                      "All Files (*.*)");
+                
+                // attach the files above textbox
+
+                // add to chat_history once clicked sent: check if selected files is empty, if not add it then empty it after
+                // What should be the format of files attached in chat_history?
+                // TODO: implement
             }
 
             // get symbol based on theme
@@ -676,22 +702,4 @@ class Desktop : public QWidget, public GUI
                 box.exec();
             }
 };
-
-// make a file finder class
-class Files : public Desktop
-{
-	public:
-			Files() = default;
-			
-            // select files, they will be parsed and sent. If sending multiple files, they will be
-            // parsed/sent one by one
-            QStringList select_files()
-			{
-                // theme of file selector is controlled by the system
-                 QStringList filenames = QFileDialog::getOpenFileNames(this, "Select files", QString(),
-                                                                       "All Files (*.*)");
-                return filenames;
-			}
-};
-
 #endif /* GUI_H */
