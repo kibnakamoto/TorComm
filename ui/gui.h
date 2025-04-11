@@ -133,7 +133,6 @@ class Desktop : public QWidget, public GUI
                     
                 }
 
-
                 // add contacts side bar menu
                 QWidget *sidemenu = new QWidget(this);
                 QVBoxLayout *sidemenu_layout = new QVBoxLayout(sidemenu);
@@ -156,9 +155,6 @@ class Desktop : public QWidget, public GUI
                 contacts_bar->addWidget(search_contacts);
                 connect(search_contacts, &QLineEdit::textChanged, this, &Desktop::contacts_filter);
                 connect(search_button, &QPushButton::clicked, this, &Desktop::show_search_contacts);
-                QTimer::singleShot(0, this, [this]() { // fixes segmentation fault regarding search contacts object creation
-                    search_contacts->installEventFilter(this);
-                });
                 search_button->setIcon(search_button_icon);
                 search_button->setIconSize(QSize(20, 20));
                 search_button->setFixedWidth(30);
@@ -172,10 +168,29 @@ class Desktop : public QWidget, public GUI
 
                 // initialize textbox here since it's needed for added contacts (saving draft messages in chat_histories)
                 textbox = new QTextEdit(this);
-                textbox->setFixedHeight(44); // same as send_button
+                textbox->setFixedHeight(45); // same as send_button
                 textbox->setStyleSheet(styler_filename);
                 textbox->setPlaceholderText("Enter Text Message Here...");
                 textbox->setFont(GUI::font);
+
+                // Connect to textChanged signal to adjust the height dynamically
+                connect(textbox, &QTextEdit::textChanged, this, [this]() {
+                    int max_height = height()/3 - 50; // third of height + 50px for padding (dynamically calculated each time)
+
+                    // Calculate the height based on the content size
+                    int desired_height = textbox->document()->size().height() + 10;  // Adding some padding
+                    if (desired_height == 10)
+                        desired_height = 45; // set to same as send_button if textbox height is initially 10
+
+                    // Ensure that the height does not exceed the maximum height
+                    if (desired_height <= max_height) {
+                        textbox->setFixedHeight(desired_height);
+                        textbox->verticalScrollBar()->setVisible(false); // hide unless needed
+                    } else {
+                        textbox->setFixedHeight(max_height);
+                        textbox->verticalScrollBar()->setVisible(true); // hide unless needed
+                    }
+                });
 
                 // same as chat history but different width
                 textbox->setStyleSheet(R"(
@@ -302,6 +317,16 @@ class Desktop : public QWidget, public GUI
 
                 // set scrollbar timers
                 set_1s_timer_scrollbar();
+
+                // if textbox is focused on, then hide search contacts and show search button
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+                connect(app, &QApplication::focusChanged, [this](QWidget *old, QWidget *now) {
+                    if (now == textbox && search_contacts->isVisible()) {
+                        hide_search_contacts();
+                    }
+                });
+#pragma GCC diagnostic pop
             }
 
             // get symbol based on theme
@@ -414,9 +439,6 @@ class Desktop : public QWidget, public GUI
                 } else if (watched == contacts_scroller && event->type() == QEvent::Enter) {
                     scroller_fade3->show_scrollbar_temp_f();
                     return true;
-                } else if (watched == search_contacts && event->type() == QEvent::FocusOut) {
-                    if(textbox->hasFocus()) // un-search if user is typing
-                        hide_search_contacts();
                 }
 
                 return QWidget::eventFilter(watched, event);
@@ -451,14 +473,34 @@ class Desktop : public QWidget, public GUI
 
     private slots:
             // show search contacts when clicked on button
-            void show_search_contacts() {
+            void show_search_contacts()
+            {
                 search_button->hide();
-                search_contacts->show();
+
+                // set current width to 0
+                int actual_width = search_contacts->width();
+                search_contacts->setGeometry(search_contacts->x(), search_contacts->y(), 0, search_contacts->height());
+                search_contacts->setVisible(true);
+
+                // animate showing the search bar
+                QPropertyAnimation *animation = new QPropertyAnimation(search_contacts, "geometry");
+                animation->setDuration(300);  // duration of 300ms
+                animation->setStartValue(QRect(search_contacts->x(), search_contacts->y(), 0, search_contacts->height())); // zero width
+                animation->setEndValue(QRect(search_contacts->x(), search_contacts->y(), actual_width, search_contacts->height()));  // target
+
+                // add acceleration rule
+                animation->setEasingCurve(QEasingCurve::InOutQuad);
+
+                // start
+                animation->start(QPropertyAnimation::DeleteWhenStopped);
+
+                // enable search bar focus maybe earlier
                 search_contacts->setFocus();
             }
 
             // hide search contacts when unfocused
-            void hide_search_contacts() {
+            void hide_search_contacts()
+            {
                 search_contacts->hide();
                 search_contacts->clear();
                 search_button->show();
@@ -537,12 +579,6 @@ class Desktop : public QWidget, public GUI
                     label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
                     label->setMaximumWidth(width()/2 - 25); // half of screen + 25px padding
                     chat_history->addStretch(1); // places the text to the top of selected chat_history
-                
-                    // Resize label so that it fits to text
-                    // label->adjustSize();
-
-                    
-                    // 3) Style it like a chat bubble
                     label->setStyleSheet(R"(
                         background-color: #224466;
                         border-radius: 10px;
@@ -550,8 +586,8 @@ class Desktop : public QWidget, public GUI
                         margin: 5px;
                     )");
                     
-                    // 4) Let it resize vertically to fit the text
-                    label->adjustSize();  // now its height == height needed to show all text
+                    // resize to fix text
+                    label->adjustSize();
 
                     // stop resizing per message added, scroll if needed
                     QWidget *parent = chat_history->parentWidget();
