@@ -28,6 +28,8 @@ test/crypto/crypto.o
 security/get_keys
 security/keys
 test/test
+test/p2p/p2p
+test/p2p/p2p.o
 
 # build files for gui
 ui/build
