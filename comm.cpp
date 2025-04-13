@@ -52,12 +52,17 @@ void get_info(uint8_t *dat, uint64_t &len, uint8_t &type)
 // set the first 72-bits of data from packet
 uint8_t set_info(uint8_t *dat, uint64_t len, uint8_t type)
 {
-	dat = new uint8_t[9];
+	// dat = new uint8_t[9];
 
 	// get length and type
-	for(uint8_t i=0;i<8;i++) {
-		dat[i] = len>>i*8;
-	}
+    dat[0] = len >> 56;
+    dat[1] = len >> 48;
+    dat[2] = len >> 40;
+    dat[3] = len >> 32;
+    dat[4] = len >> 24;
+    dat[5] = len >> 16;
+    dat[6] = len >> 8;
+    dat[7] = len;
 	dat[8] = type;
 	return 9; // 9 bytes of data
 }
