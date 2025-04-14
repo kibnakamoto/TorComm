@@ -140,27 +140,6 @@ class Blocked
 // 	uint8_t type; // type is TEXT, IMAGE, VIDEO, etc. Cryptography protocol is selected on first connection, not every message has new protocol
 // };
 
-// for co_await, recv_genesis requires co await.
-template<typename T>
-struct Awaitable {
-    struct promise_type {
-        T value;
-        std::exception_ptr eptr;
-
-        Awaitable get_return_object() { return {*this}; }
-        std::suspend_never initial_suspend() noexcept { return {}; } // don't suspend since async. No resume call needed
-        std::suspend_never final_suspend() noexcept { return {}; }
-        void return_value(T val) { value = val; }
-        void unhandled_exception() { eptr = std::current_exception(); }
-    };
-
-    promise_type& p;
-    T operator()() {
-        if (p.eptr) std::rethrow_exception(p.eptr);
-        return p.value;
-    }
-};
-
 // P2P has Client and Server on all connections
 class P2P
 {
@@ -177,7 +156,9 @@ class P2P
 
 		public:
 
-		P2P(uint16_t port, Blocked blocked) : listener(boost::asio::ip::tcp::acceptor(io_context, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v6(), port))),
+		P2P(uint16_t port, Blocked blocked) : listener(boost::asio::ip::tcp::acceptor(io_context,
+                                                                                      boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v6(),
+                                                                                                                     port))),
 											  resolver(io_context)
 		{
 			this->blocked = blocked;
@@ -196,40 +177,39 @@ class P2P
 	    using FunctionSocket = std::function<void(std::shared_ptr<boost::asio::ip::tcp::socket>)>;
 
 		// accept connection, their client sends to this server.
-		void accept(const FunctionSocket &lambda=nullptr)
+		boost::asio::awaitable<std::shared_ptr<boost::asio::ip::tcp::socket>>
+        accept()
 		{
-            auto sock = std::make_shared<boost::asio::ip::tcp::socket>(io_context);
-        	listener.async_accept(*sock, [sock, this, lambda](boost::system::error_code const& ec) {
-				if (!ec) {
-					// if ip address blocked, don't add as a client
-		            auto remote_endpoint = sock->remote_endpoint();
-    		        if (!remote_endpoint.address().is_unspecified() && blocked.is_blocked(remote_endpoint.address().to_v6().to_string())) {
-						std::cout << "\nblocked connection";
-						sock->close(); // stop socket because it's blocked
-					} else {
-						if(std::find_if(clients.begin(), clients.end(), [remote_endpoint](const auto &socket)
-						   				{ return remote_endpoint == socket->remote_endpoint();} ) == clients.end()) {
-							std::cout << "\nnew connection to " << remote_endpoint;
-				    		clients.push_back(sock);
-							if(lambda) {
-								lambda(sock);
-							}
-						}
-					}
-				    accept(lambda);
-				} else {
-					std::cout << std::endl << "P2P::accept() error: " << ec.message() << "\n";
-					if(log_network_issues) {
-						std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-						file << "\nerror in P2P::accept(): " << ec.message();
-						file.close();
-					}
+            try {
+                auto sock = std::make_shared<boost::asio::ip::tcp::socket>(io_context);
+        	    co_await listener.async_accept(*sock, boost::asio::use_awaitable);
+
+			    // if ip address blocked, don't add as a client
+		        auto remote_endpoint = sock->remote_endpoint();
+    		    if (!remote_endpoint.address().is_unspecified() && blocked.is_blocked(remote_endpoint.address().to_v6().to_string())) {
+			    	std::cout << "\nblocked connection";
+			    	sock->close(); // stop socket because it's blocked
+			    } else {
+			    	if(std::find_if(clients.begin(), clients.end(), [remote_endpoint](const auto &socket)
+			    	   				{ return remote_endpoint == socket->remote_endpoint();} ) == clients.end()) {
+			    		// std::cout << "\nnew connection to " << remote_endpoint;
+			    		clients.push_back(sock);
+                        co_return sock;
+			    	}
+			    }
+            } catch (const boost::system::system_error& e) {
+			    std::cout << std::endl << "P2P::accept() error: " << e.what() << "\n";
+				if(log_network_issues) {
+					std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+					file << "\nerror in P2P::accept(): " << e.what();
+					file.close();
 				}
-        	});
+                co_return nullptr;
+            }
 		}
 
 		// accept connection from specific ip only (group-chat)
-		void accept(std::vector<std::string> ips) // TODO: keep up to date with working previous accept function
+		void accept(std::vector<std::string> ips) // no coroutines as this is always listening
 		{
             auto sock = std::make_shared<boost::asio::ip::tcp::socket>(io_context);
         	listener.async_accept(*sock, [&](boost::system::error_code const& ec) {
@@ -264,61 +244,61 @@ class P2P
         	});
 		}
 
-		// connect to their server even if blocked
+		// connect to their server even if blocked, handle blocking in higher heirarchy
 		// address: the ip address
 		// port_: port to connect to
-		// lambda: lambda function, called after successful connection if defined
 		// reattempt_after_fail: how many times should it try to reconnect after failing
-		void connect(std::string address, uint16_t port_, const FunctionSocket &lambda=nullptr, uint32_t reattempt_after_fail = 5)
+        boost::asio::awaitable<std::shared_ptr<boost::asio::ip::tcp::socket>>
+        connect(std::string address, uint16_t port_, uint32_t reattempt_after_fail=5)
 		{
-			auto endpoint_ = resolver.resolve(address, std::to_string(port_));
-
-			if(endpoint_.empty())
-			{
-				std::cout << "Failed to Resolve Endpoint For " << address << ":" << port_ << std::endl;
-				return;
-			}
-			
-			// Attempt to connect
-			auto socket = std::make_shared<boost::asio::ip::tcp::socket>(io_context); // start socket
-			servers.emplace_back(socket);
-			async_connect(*socket.get(), endpoint_, [this, address, port_,
-											         reattempt_after_fail,
-                                                     socket, lambda](boost::system::error_code ec,
-													   				 boost::asio::ip::tcp::endpoint) {
-				if (ec) {
-					std::cout << "Failed Connection " << reattempt_after_fail << " (" << ec.message()
-							  << "): Reconnecting in 3 Seconds..." << std::endl;
-
-					// wait 3 seconds
-					boost::asio::steady_timer timer(io_context, boost::asio::chrono::seconds(3));
-					timer.wait();
-					if (reattempt_after_fail > 1) { // call if reattempt wanted
-						connect(address, port_, lambda, reattempt_after_fail - 1);
-					} else {
-					 	std::cout << "Failed Connection: Too Many Attempts, Connection Failed" << std::endl;
-					 	servers.pop_back(); // remove last element because there is an error
-
-						if (log_network_issues) {
-							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-							file << "\nerror in P2P::connect(): " << ec.message() << " - " << get_time();
-							file.close();
-						}
-					}
-				} else {
-					std::cout << std::endl << "CALLED ASYNC_CONNECT - SUCCESS" << std::endl << std::flush;
-					if(lambda) { // if function exists
-						lambda(socket); // call lambda upen successful connection
-					}
-				}
-			});
+            const char *error_msg = nullptr;
+            try {
+    			auto endpoint_ = resolver.resolve(address, std::to_string(port_));
+    			if(endpoint_.empty())
+    			{
+    				std::cout << "Failed to Resolve Endpoint For " << address << ":" << port_ << std::endl;
+    				co_return nullptr;
+    			}
+    			
+    			// Attempt to connect
+    			auto socket = std::make_shared<boost::asio::ip::tcp::socket>(io_context); // start socket
+    			co_await async_connect(*socket.get(), endpoint_, boost::asio::use_awaitable);
+    			servers.emplace_back(socket);
+                co_return socket;
+            } catch(boost::system::system_error &e) {
+                error_msg = e.what();
+            }
+            if(error_msg) {
+    		    std::cout << "Failed Connection " << reattempt_after_fail << " (" << error_msg
+    		    		  << "): Reconnecting in 3 Seconds..." << std::endl;
+    
+    		    // wait 3 seconds
+                auto executor = co_await boost::asio::this_coro::executor;
+                boost::asio::steady_timer timer(executor, boost::asio::chrono::seconds(3));
+    		    // boost::asio::steady_timer timer(io_context, boost::asio::chrono::seconds(3));
+    		    co_await timer.async_wait(boost::asio::use_awaitable);
+    		    if (reattempt_after_fail > 1) { // call if reattempt wanted
+    		    	co_return co_await connect(address, port_, reattempt_after_fail - 1);
+    		    } else {
+    		     	std::cout << "Failed Connection: Too Many Attempts, Connection Failed" << std::endl;
+    		     	servers.pop_back(); // remove last element because there is an error
+    
+    		    	if (log_network_issues) {
+    		    		std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+    		    		file << "\nerror in P2P::connect(): " << error_msg << " - " << get_time();
+    		    		file.close();
+    		    	}
+                    co_return nullptr;
+    		    }
+            }
 		}
 
 
 		// after calling connect
 		// send_to: person receiving
 		// return: if the other person exists after called find_to_recv with their ip address.
-		bool send_two_party_ecdh(std::shared_ptr<boost::asio::ip::tcp::socket> send_to, Cryptography::ProtocolData protocol,
+        boost::asio::awaitable<bool>
+		send_two_party_ecdh(std::shared_ptr<boost::asio::ip::tcp::socket> send_to, Cryptography::ProtocolData protocol,
 								 Cryptography::Key &key)
 		{
 			// no compression
@@ -341,13 +321,13 @@ class P2P
 			// receive their keys
             std::shared_ptr<boost::asio::ip::tcp::socket> recv_from = find_to_recv(send_to->local_endpoint().address().to_string());
 			if(!recv_from)
-				return 0;
+				co_return 0;
 
 			length--;
 
 			if(!recv_from->available()) // check if the sender is available
-				return 0;
-			recv(recv_from, &packet[0], length); // reuse packet, receive their public key
+				co_return 0;
+			co_await recv(recv_from, packet, length); // reuse packet, receive their public key
 
 			// use their keys
 			CryptoPP::ECPPoint public_bob = Cryptography::Key::reconstruct_point_from_bytes(packet, xy_len, &packet[xy_len], xy_len);
@@ -359,15 +339,17 @@ class P2P
 			shared_secret.x.Encode(&packet[0], shared_secret_len, CryptoPP::Integer::UNSIGNED); // add the data to an array (used packet since it's already allocated)
 			key.hkdf(packet, shared_secret_len, (uint8_t*)"", 0, (uint8_t*)"", 0);
 			delete[] packet;
-			return 1;
+			co_return 1;
 		}
 
 		// after calling accept
 		// recv_from: the sending node
 		// errors: CAN ONLY BE NO_PROTOCOL. CHECK IF NO_PROTOCOL
 		// return: if the other person exists after called find_to_recv with their ip address.
-		bool recv_two_party_ecdh(std::shared_ptr<boost::asio::ip::tcp::socket> recv_from, Cryptography::ProtocolData protocol,
-								 Cryptography::Key &key, ERRORS &error)
+		boost::asio::awaitable<bool>
+        recv_two_party_ecdh(std::shared_ptr<boost::asio::ip::tcp::socket> recv_from,
+                            Cryptography::ProtocolData protocol,
+					        Cryptography::Key &key, ERRORS &error)
 		{
 			// no compression
 			uint16_t xy_len = Cryptography::get_curve_size(protocol.curve);
@@ -376,9 +358,10 @@ class P2P
 			
 			// receive their keys
 			if(!recv_from->available())
-				return 0;
+				co_return 0;
 
-			recv(recv_from, packet, length); // reuse packet
+            // TODO: sender sends genesis while it's not received. Fix -- also mentioned in torcomm.cpp
+			// co_await recv(recv_from, packet, length); // reuse packet
 
 			// check if protocol number exists
 			if(packet[0] >= Cryptography::LAST_CURVE) {
@@ -393,7 +376,7 @@ class P2P
 				}
 				error = NO_PROTOCOL; // no protocol found. Cannot establish secure public channel
 				// when calling function: make sure to check if error == NO_PROTOCOL
-				return 1;
+				co_return 1;
 			}
 
 			protocol.init(packet[0]); // re-initialize protocol
@@ -408,7 +391,7 @@ class P2P
 			// Alice sends public key
             std::shared_ptr<boost::asio::ip::tcp::socket> send_to = find_to_send(recv_from->local_endpoint().address().to_string());
 			if(!send_to)
-				return 0;
+				co_return 0;
 			length--;
 			send(send_to, packet, length);
 
@@ -419,7 +402,7 @@ class P2P
 			key.hkdf(packet, shared_secret_len, (uint8_t*)"", 0, (uint8_t*)"", 0);
 			delete[] packet;
 			
-			return 1;
+			co_return 1;
 		}
 
 		// start the assynchronous connections. All connections are queued up until now
@@ -472,8 +455,8 @@ class P2P
 			// client sends network packet
             auto dat = std::make_shared<uint8_t[]>(9);
 			uint8_t dat_len = set_info(dat.get(), len, type);
-			for(std::shared_ptr<boost::asio::ip::tcp::socket> client : clients) {
-				boost::asio::async_write(*client.get(), boost::asio::buffer(dat.get(), dat_len), [&](boost::system::error_code ec, uint64_t) {
+			for(std::shared_ptr<boost::asio::ip::tcp::socket> server : servers) {
+				boost::asio::async_write(*server.get(), boost::asio::buffer(dat.get(), dat_len), [&](boost::system::error_code ec, uint64_t) {
 					if (ec) {
 						if(log_network_issues) {
 							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
@@ -489,7 +472,6 @@ class P2P
 		void send_genesis(std::shared_ptr<boost::asio::ip::tcp::socket> sender, uint64_t len, uint8_t type)
 		{
 			// client sends network packet
-            // std::shared_ptr<uint8_t> dat(new uint8_t[9]);
             auto dat = std::make_shared<uint8_t[]>(9);
             uint8_t dat_len = set_info(dat.get(), len, type);
 			boost::asio::async_write(*sender.get(), boost::asio::buffer(dat.get(), dat_len), [dat, sender](boost::system::error_code ec, uint64_t) {
@@ -508,28 +490,35 @@ class P2P
 		// data: whole data received
 		// packet_size: packet size of the received packet, this is for knowing how much of the array is valid
 		// return: who sent the message
-        std::shared_ptr<boost::asio::ip::tcp::socket> recv(uint8_t *data, std::unsigned_integral auto &packet_size)
+        std::shared_ptr<boost::asio::ip::tcp::socket>
+        recv(uint8_t *data, std::unsigned_integral auto &packet_size)
 		{
-			return _recv(boost::asio::buffer(data, packet_size));
+			std::shared_ptr<boost::asio::ip::tcp::socket> sock = co_await _recv(boost::asio::buffer(data, packet_size));
+            co_return sock;
 		}
 
 		// same as function above + receiver: find_to_recv(address)
-        boost::asio::awaitable<void> recv(std::shared_ptr<boost::asio::ip::tcp::socket> receiver, uint8_t *data, std::unsigned_integral auto &packet_size)
+        boost::asio::awaitable<void>
+        recv(std::shared_ptr<boost::asio::ip::tcp::socket> receiver, uint8_t *data, std::unsigned_integral auto &packet_size)
 		{
-			co_await _recv(receiver, boost::asio::buffer(data, packet_size));
+            auto temp = boost::asio::buffer(data, packet_size);
+			co_await _recv(receiver, temp);
             co_return;
 		}
 
         // receive with length of data already figured out
-        std::shared_ptr<boost::asio::ip::tcp::socket> recv(std::string &data)
+        boost::asio::awaitable<std::shared_ptr<boost::asio::ip::tcp::socket>> recv(std::string &data)
 		{
-			return _recv(boost::asio::buffer(data));
+            auto temp = boost::asio::buffer(data);
+			std::shared_ptr<boost::asio::ip::tcp::socket> sock = co_await _recv(temp);
+            co_return sock;
 		}
 
 		// same as function above + receiver: find_to_recv(address)
 		boost::asio::awaitable<void> recv(std::shared_ptr<boost::asio::ip::tcp::socket> receiver, std::string &data)
 		{
-			co_await _recv(receiver, boost::asio::buffer(data));
+            auto temp = boost::asio::buffer(data);
+			co_await _recv(receiver, temp);
             co_return;
 		}
 
@@ -1007,29 +996,30 @@ class P2P
 		// receive network packet data. This is for learning 
 		// packet_size: packet size of the received packet, this is for knowing how much of the array is valid
 		// return: who sent the message
-        std::shared_ptr<boost::asio::ip::tcp::socket> recv_genesis(uint64_t &len, uint8_t &type) // TODO: keep this in sync with next function (update)
+        boost::asio::awaitable<std::shared_ptr<boost::asio::ip::tcp::socket>>
+        recv_genesis(uint64_t &len, uint8_t &type)
 		{
-			uint8_t packet_size = 9;
-            auto dat = std::make_shared<uint8_t[]>(packet_size);
-			for(auto &server : servers) {
-				len = server->available();
-				if(len) { // if there is data to read
-					boost::asio::async_read(*server.get(), boost::asio::buffer(dat.get(), packet_size), [dat, &len, &type](boost::system::error_code ec, 
-																						   	   uint64_t) {
-						if (!ec) {
-							get_info(dat.get(), len, type);
-						} else {
-							if(log_network_issues) {
-								std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-								file << "\nerror in P2P::recv_genesis(length, packet_size): " << ec.message();
-								file.close();
-							}
-						}
-          			});
-					return server; // return since data is received
-				}
-			}
-			return nullptr; // couldn't send to anybody
+            try {
+			    uint8_t packet_size = 9;
+                auto dat = std::make_shared<uint8_t[]>(packet_size);
+			    for(auto &client : clients) {
+			    	len = client->available();
+			    	if(len) { // if there is data to read
+			    		co_await boost::asio::async_read(*client.get(),
+                                                         boost::asio::buffer(dat.get(), packet_size),
+                                                         boost::asio::use_awaitable);
+			    		get_info(dat.get(), len, type);
+			    		co_return client; // return since data is received
+			    	}
+			    }
+            } catch (const boost::system::system_error& e) {
+			    if(log_network_issues) {
+			    	std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+			    	file << "\nerror in P2P::recv_genesis(length, packet_size): " << e.what();
+			    	file.close();
+			    }
+            }
+			co_return nullptr; // couldn't send to anybody
 		}
 
 		// same as function above + receiver: the socket from find_to_recv(address)
@@ -1042,27 +1032,11 @@ class P2P
             try { 
 			    uint8_t packet_size = 9;
                 auto dat = std::make_shared<uint8_t[]>(9);
-			    size_t placeholder = co_await boost::asio::async_read(*receiver.get(), boost::asio::buffer(dat.get(), packet_size),
-                                        boost::asio::use_awaitable);
-                                        // boost::asio::transfer_exactly(packet_size), 
-                //                          [dat, receiver](boost::system::error_code ec, 
-		        //  													 uint64_t) {
-		        //  	if (!ec) {
-                //          // promise->set_value({len, type}); // Resolve the future
-		        //  	} else {
-		        //  		if(log_network_issues) {
-		        //  			std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-		        //  			file << "\nerror in P2P::recv(data, length, packet_size): " << ec.message();
-		        //  			file.close();
-                //              // promise->set_exception(std::make_exception_ptr(std::runtime_error(ec.message())));
-		        //  		}
-		        //  	}
-                //	});
-
+			    co_await boost::asio::async_read(*receiver.get(), boost::asio::buffer(dat.get(), packet_size),
+                                                 boost::asio::use_awaitable);
                 uint64_t len;
                 uint8_t type;
 			    get_info(dat.get(), len, type);
-                std::cout << "\nlen = " << len << std::endl;
                 co_return std::make_pair(len, type);
             } catch(const boost::system::system_error& e) {
                 if (log_network_issues) {
@@ -1079,10 +1053,10 @@ class P2P
 
         std::shared_ptr<boost::asio::ip::tcp::socket> find_to_send(std::string ip)
 		{
-			for(auto &client : clients) {
-				std::string address = client->remote_endpoint().address().to_string();
+			for(auto &server : servers) {
+				std::string address = server->remote_endpoint().address().to_string();
 				if(ip == address) {
-					return client;
+					return server;
 				}
 			}
 			return nullptr;
@@ -1090,10 +1064,10 @@ class P2P
 
         std::shared_ptr<boost::asio::ip::tcp::socket> find_to_recv(std::string ip)
 		{
-			for(auto &server : servers) {
-				std::string address = server->remote_endpoint().address().to_string();
+			for(auto &client : clients) {
+				std::string address = client->remote_endpoint().address().to_string();
 				if(ip == address) {
-					return server;
+					return client;
 				}
 			}
 			return nullptr;
@@ -1104,7 +1078,7 @@ class P2P
 			void _send(Boost_Buffer_Type auto packet)
 			{
 				// client sends network packet
-				for(std::shared_ptr<boost::asio::ip::tcp::socket> client : clients) {
+				for(std::shared_ptr<boost::asio::ip::tcp::socket> client : servers) {
 					boost::asio::async_write(*client.get(), packet, [&](boost::system::error_code ec, uint64_t) {
 						if (ec && log_network_issues) {
 							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
@@ -1129,21 +1103,15 @@ class P2P
 			}
 
 		// only receive from this address
-		boost::asio::awaitable<void> _recv(std::shared_ptr<boost::asio::ip::tcp::socket> receiver, Boost_Buffer_Type auto data)
+		boost::asio::awaitable<void>
+        _recv(std::shared_ptr<boost::asio::ip::tcp::socket> receiver, Boost_Buffer_Type auto &data)
 		{
             try{
-			    size_t bytes_received = co_await boost::asio::async_read(*receiver.get(), data, boost::asio::use_awaitable);
-                // [&](boost::system::error_code ec, uint64_t) {
-		        // 		if (ec && log_network_issues) {
-		        // 			std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-		        // 			file << "\nerror in P2P::recv(address, data, packet_size): " << ec.message();
-		        // 			file.close();
-		        // 		}
-                //   	});
+			    co_await boost::asio::async_read(*receiver.get(), data, boost::asio::use_awaitable);
             } catch(const boost::system::system_error& e) {
 		        if (log_network_issues) {
 		        	std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-		        	file << "\nerror in P2P::recv(address, data, packet_size): " << e.what();
+		        	file << "\nerror in P2P::recv(address, data): " << e.what();
 		        	file.close();
 		        }
             }
@@ -1151,22 +1119,25 @@ class P2P
 		}
 
 		// receive from everybody
-        std::shared_ptr<boost::asio::ip::tcp::socket> _recv(Boost_Buffer_Type auto data)
+        boost::asio::awaitable<std::shared_ptr<boost::asio::ip::tcp::socket>>
+        _recv(Boost_Buffer_Type auto &data)
 		{
-			for(auto &server : servers) {
-				size_t tmp = server->available();
-				if(tmp) {
-					boost::asio::async_read(*server.get(), data, [&](boost::system::error_code ec, uint64_t) {
-						if(ec && log_network_issues) {
-							std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-							file << "\nerror in P2P::recv(data, packet_size): " << ec.message();
-							file.close();
-						}
-          			});
-				return server;
+            try {
+			    for(auto &server : servers) {
+			    	size_t tmp = server->available();
+			    	if(tmp) {
+			    		co_await boost::asio::async_read(*server.get(), data, boost::asio::use_awaitable);
+			    	co_return server;
+			    	}
+			    }
+            } catch(const boost::system::system_error& e) {
+				if(log_network_issues) {
+					std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+					file << "\nerror in P2P::recv(data, packet_size): " << e.what();
+					file.close();
 				}
-			}
-			return nullptr; // received from no one
+            }
+			co_return nullptr; // received from no one
 		}
 };
 
