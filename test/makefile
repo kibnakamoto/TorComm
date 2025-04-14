@@ -1,8 +1,8 @@
 CXX = g++
 CXXFLAGS = -std=c++23 -Wall -pedantic -Wextra -O4 -g
-EXEC = block/block crypto/crypto file/file misc/pad p2p/peer1/peer1 p2p/peer2/peer2
-OBJS_CLEAN = block/*.o crypto/*.o file/*.o misc/*.o p2p/peer1/*.o p2p/peer2/*.o
-OBJS = block/blocked.o crypto/crypto.o file/file.o misc/padding.o p2p/peer2/peer2.o p2p/peer1/peer1.o
+EXEC = block/block crypto/crypto file/file misc/pad p2p/p2p
+OBJS_CLEAN = block/*.o crypto/*.o file/*.o misc/*.o p2p/*.o
+OBJS = block/blocked.o crypto/crypto.o file/file.o misc/padding.o p2p/*.o
 MAIN = test.cpp
 
 # block: test blocking an ip address
@@ -12,8 +12,7 @@ MAIN = test.cpp
 
 all: ${OBJS}
 	${MAKE} -C ../ debug
-	${MAKE} -C p2p/peer1
-	${MAKE} -C p2p/peer2
+	${MAKE} -C p2p/
 	${MAKE} -C block/
 	${MAKE} -C crypto/
 	${MAKE} -C file/
