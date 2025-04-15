@@ -31,6 +31,9 @@ test/test
 test/p2p/p2p
 test/p2p/p2p.o
 
+# results of tests
+test/test.txt
+
 # build files for gui
 ui/build
 
