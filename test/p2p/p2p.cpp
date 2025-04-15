@@ -297,6 +297,7 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
 int main()
 {
     Blocked blocked("../../security/keys", "../../blocked");
+
     std::string connect_ip = "::1";
     
     // test basic connections between 3 peers. Test if they can connect, send/recv
@@ -309,12 +310,15 @@ int main()
     // test full networking functions if basic tests passed
     // ecdh, encryption, verification.
     bool advanced_passed = advanced_test(connect_ip, blocked);
+    std::cout << std::endl << "";
 
     if(!advanced_passed)
         return 1;
 
-    std::cout << std::endl << "";
-    
-    // while (true) std::this_thread::sleep_for(std::chrono::seconds(1));
+    // save that tests passed to file
+   	std::ofstream file("../test.txt", std::ios_base::app);
+	file << 4;
+	file.close();
+
     return 0;
 }
