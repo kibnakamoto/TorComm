@@ -23,8 +23,8 @@ int main()
 #pragma GCC diagnostic pop
 
 	std::ifstream file("test.txt");
-	char data[3];
-	file.read(data, 3);
+	char data[4];
+	file.read(data, 4);
 	bool one = check(data, 4, '1');
     bool two = check(data, 4, '2');
     bool three = check(data, 4, '3');
