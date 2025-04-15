@@ -5,7 +5,8 @@
 static bool check(char *data, uint32_t n, char check_if)
 {
 	for(uint32_t i=0;i<n;i++) {
-		if(data[i] == check_if) return 1;
+		if(data[i] == check_if)
+            return 1;
 	}
 	return 0;
 }
