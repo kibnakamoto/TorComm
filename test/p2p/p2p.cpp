@@ -127,7 +127,6 @@ bool test_basic(std::string connect_ip, Blocked &blocked)
                 std::cout << "\n[PEER 3] Accepted connection from " << socket->remote_endpoint() << std::endl;
 
                 auto [len, type] = co_await peer3.recv_genesis(socket);
-                 std::cout << "len = " << len << std::endl;
                 std::string data(len, '\0');
 
                 co_await peer3.recv(socket, data);
@@ -165,11 +164,13 @@ bool test_basic(std::string connect_ip, Blocked &blocked)
     t3.join();
 
     bool passed = passed1 && passed2 && passed3;
+    std::cout << "\n\n-----------------------------------------------------";
     if(passed) {
         std::cout << "\nPASSED All Basic Tests, Networking Functions Properly";
     } else {
         std::cout << "\nFAILED basic tests failed (t1, t2, t3): (" << passed1 << ", " << passed2 << ", " << passed3 << ")";
     }
+    std::cout << "\n-----------------------------------------------------\n";
     std::cout << std::endl;
     return passed;
 }
@@ -186,14 +187,17 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
     P2P peer2(peer2_port, blocked);
 
     // check if each test passed for the 3 peers (if they received the correct message)
-    std::atomic<bool> passed1(true); // correctly receive from 2
-    std::atomic<bool> passed2(true); // correctly receive from 1
-    std::thread t1([&peer1, peer2_port, connect_ip] {
+    // shared secrets
+    std::atomic<uint8_t*> key1; // correctly receive from 2
+    std::atomic<uint8_t*> key2; // correctly receive from 1
+    std::atomic<uint16_t> keysize;
+
+    std::thread t1([&peer1, peer2_port, connect_ip, &key1, &keysize] {
 
         // connector and acceptor
         boost::asio::co_spawn(
             peer1.get_io_context(),
-            [&peer1, connect_ip, peer2_port]() -> boost::asio::awaitable<void> {
+            [&peer1, connect_ip, peer2_port, &key1, &keysize]() -> boost::asio::awaitable<void> {
                 // set cryptography
                 Cryptography::Curves curve = Cryptography::SECP256K1;
                 Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_HMAC_AES256_CBC_SHA512;
@@ -211,17 +215,27 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
                 // ecdh
                 auto sent = co_await peer1.send_two_party_ecdh(socket, protocol, key);
                 std::cout << "\n[PEER 1] SEND STATUS: " << sent;
+                
+                // save key for testing
+                key1 = new uint8_t[protocol.key_size];
+                memcpy(key1, key.key, protocol.key_size);
+                keysize = protocol.key_size;
+                std::cout << "[PEER 1] key: ";
+                for(int i=0;i<protocol.key_size;i++) {
+                    std::cout << std::hex << key.key[i]+0;
+                }
+                std::cout << std::endl;
             },
             boost::asio::detached
         );
         peer1.start_async();
     });
 
-    std::thread t2([&peer2, peer1_port, connect_ip] {
+    std::thread t2([&peer2, peer1_port, connect_ip, &key2] {
         // connector and acceptor
         boost::asio::co_spawn(
             peer2.get_io_context(),
-            [&peer2, peer1_port, connect_ip]() -> boost::asio::awaitable<void> {
+            [&peer2, peer1_port, connect_ip, &key2]() -> boost::asio::awaitable<void> {
                 Cryptography::ProtocolData protocol_received;
                 Cryptography::Key key_received;
                 auto socket = co_await peer2.connect(connect_ip, peer1_port);
@@ -236,6 +250,15 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
                 std::cout << "\n[PEER 2] RECEIVE STATUS: " << received;
                 if(error != NO_ERROR)
                     std::cout << "[PEER 2] ERROR ON ECDH RECEIVER" << ERROR_STRING[error];
+
+                // save key for testing
+                key2 = new uint8_t[protocol_received.key_size];
+                memcpy(key2, key_received.key, protocol_received.key_size);
+                std::cout << "[PEER 2] key: ";
+                for(int i=0;i<protocol_received.key_size;i++) {
+                    std::cout << std::hex << key_received.key[i]+0;
+                }
+                std::cout << std::endl;
             },
             boost::asio::detached
         );
@@ -248,7 +271,27 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
     // join threads
     t1.join();
     t2.join();
-    return 0;
+
+    bool equal = true;
+    for(uint16_t i=0;i<keysize;i++) {
+        if(key1[i] != key2[i]) {
+            equal = false;
+            break;
+        }
+    }
+
+    // if sent key = received key
+    std::cout << "\n\n------------------------------------";
+    if(equal) {
+        std::cout << "\nPASSED Advanced Tests for Networking";
+    } else {
+        std::cout << "\nFAILED advanced tests for networking";
+    }
+    std::cout << "\n------------------------------------" << std::endl;
+    delete[] key1;
+    delete[] key2;
+
+    return equal;
 }
 
 int main()
@@ -257,17 +300,21 @@ int main()
     std::string connect_ip = "::1";
     
     // test basic connections between 3 peers. Test if they can connect, send/recv
-    // bool basic_passed = test_basic(connect_ip, blocked);
+    bool basic_passed = test_basic(connect_ip, blocked);
     
-    // // if basic tests failed, don't continue with tests
-    // if(!basic_passed)
-    //     return 1;
+    // if basic tests failed, don't continue with tests
+    if(!basic_passed)
+         return 1;
     
     // test full networking functions if basic tests passed
     // ecdh, encryption, verification.
-    advanced_test(connect_ip, blocked);
+    bool advanced_passed = advanced_test(connect_ip, blocked);
+
+    if(!advanced_passed)
+        return 1;
 
     std::cout << std::endl << "";
     
     // while (true) std::this_thread::sleep_for(std::chrono::seconds(1));
+    return 0;
 }
