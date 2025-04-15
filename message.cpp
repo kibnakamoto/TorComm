@@ -324,9 +324,18 @@ CryptoPP::OID Cryptography::ProtocolData::get_curve()
 	}
 }
 
-Cryptography::Key::Key(ProtocolData &protocol) : protocol(protocol)
+Cryptography::Key::Key(ProtocolData &protocol)
 {
-	key = new uint8_t[protocol.key_size];
+    init(protocol);
+}
+
+void Cryptography::Key::init(ProtocolData &protocol)
+{
+    this->protocol = &protocol;
+
+    if(key == nullptr)
+	    key = new uint8_t[protocol.key_size];
+
 	switch(protocol.curve) {
 		case SECP256K1:
 			group.Initialize(CryptoPP::ASN1::secp256k1());
@@ -422,12 +431,12 @@ Cryptography::Key::multiply(CryptoPP::Integer priv_key,
 // info_len: length of info
 void Cryptography::Key::hkdf(uint8_t *password, uint16_t password_len, uint8_t *salt, uint16_t salt_len, uint8_t *info, uint16_t info_len)
 {
-	if(protocol.hash == SHA256) {
+	if(protocol->hash == SHA256) {
 		CryptoPP::HKDF<CryptoPP::SHA256> hkdf;
-	    hkdf.DeriveKey(key, protocol.key_size, password, password_len, salt, salt_len, info, info_len);
-	} else if (protocol.hash == SHA512) {
+	    hkdf.DeriveKey(key, protocol->key_size, password, password_len, salt, salt_len, info, info_len);
+	} else if (protocol->hash == SHA512) {
 		CryptoPP::HKDF<CryptoPP::SHA512> hkdf;
-	    hkdf.DeriveKey(key, protocol.key_size, password, password_len, salt, salt_len, info, info_len);
+	    hkdf.DeriveKey(key, protocol->key_size, password, password_len, salt, salt_len, info, info_len);
 	} else {
 		#if DEBUG_MODE
 			throw std::runtime_error("Key::hkdf: HASHING_ALGORITHM_NOT_FOUND error. The protocol number is not valid");
@@ -436,7 +445,7 @@ void Cryptography::Key::hkdf(uint8_t *password, uint16_t password_len, uint8_t *
 
 		// default value
 		CryptoPP::HKDF<default_hash> hkdf;
-	    hkdf.DeriveKey(key, protocol.key_size, (const uint8_t*)"", 0, salt, salt_len, NULL, 0);
+	    hkdf.DeriveKey(key, protocol->key_size, (const uint8_t*)"", 0, salt, salt_len, NULL, 0);
 	}
 }
 

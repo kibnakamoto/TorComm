@@ -223,7 +223,7 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
             peer2.get_io_context(),
             [&peer2, peer1_port, connect_ip]() -> boost::asio::awaitable<void> {
                 Cryptography::ProtocolData protocol_received;
-                Cryptography::Key key_received(protocol_received);
+                Cryptography::Key key_received;
                 auto socket = co_await peer2.connect(connect_ip, peer1_port);
                 std::cout << "\n[PEER 2] Connected to " << socket->remote_endpoint(); // connect to 1 peer
         
@@ -231,7 +231,7 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
                 std::cout << "\n[PEER 2] Accepted connection from " << listener_socket->remote_endpoint() << std::endl;
 
                 // ecdh
-                ERRORS error;
+                ERRORS error = NO_ERROR;
                 auto received = co_await peer2.recv_two_party_ecdh(listener_socket, protocol_received, key_received, error);
                 std::cout << "\n[PEER 2] RECEIVE STATUS: " << received;
                 if(error != NO_ERROR)
@@ -269,5 +269,5 @@ int main()
 
     std::cout << std::endl << "";
     
-    while (true) std::this_thread::sleep_for(std::chrono::seconds(1));
+    // while (true) std::this_thread::sleep_for(std::chrono::seconds(1));
 }
