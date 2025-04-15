@@ -53,6 +53,17 @@
 // get current time
 std::string get_time();
 
+// convert bytes to hex
+inline std::string hex(uint8_t *arr, uint16_t len)
+{
+	std::stringstream ss;
+	for(uint16_t i=0;i<len;i++) {
+		ss << std::hex << std::setfill('0') << std::setw(2) << arr[i]+0;
+	}
+	ss << std::endl;
+	return ss.str();
+}
+
 namespace Cryptography
 {
 	// GLOBAL:

@@ -144,6 +144,7 @@ class Blocked
 class P2P
 {
 	boost::asio::io_context io_context;
+    std::thread io_thread;
 	std::vector<std::shared_ptr<boost::asio::ip::tcp::socket>> clients;
 	std::vector<std::shared_ptr<boost::asio::ip::tcp::socket>> servers;
 	boost::asio::ip::tcp::acceptor listener;
@@ -336,11 +337,6 @@ class P2P
 		uint16_t shared_secret_len = shared_secret.x.MinEncodedSize();
 		shared_secret.x.Encode(&packet[0], shared_secret_len, CryptoPP::Integer::UNSIGNED); // add the data to an array (used packet since it's already allocated)
 		key.hkdf(packet, shared_secret_len, (uint8_t*)"", 0, (uint8_t*)"", 0);
-        std::cout << "packet: ";
-        for(int i=0;i<protocol.key_size;i++) {
-            std::cout << std::hex << key.key[i]+0;
-        }
-        std::cout << std::endl;
 		delete[] packet;
 		co_return 1;
 	}
@@ -407,11 +403,6 @@ class P2P
 		uint16_t shared_secret_len = shared_secret.x.MinEncodedSize();
 		shared_secret.x.Encode(&packet[0], shared_secret_len, CryptoPP::Integer::UNSIGNED); // add the data to an array (used packet since it's already allocated)
 		key.hkdf(packet, shared_secret_len, (uint8_t*)"", 0, (uint8_t*)"", 0); // key is in key.key
-        std::cout << "packet: ";
-        for(int i=0;i<protocol.key_size;i++) {
-            std::cout << std::hex << key.key[i]+0;
-        }
-        std::cout << std::endl;
 		delete[] packet;
 		
 		co_return 1;
@@ -421,7 +412,7 @@ class P2P
 	void start_async()
 	{
 		// io_context.run();
-        std::thread([this] {io_context.run(); }).detach();  // Run in background
+        io_thread = std::thread([this] {io_context.run(); });  // Run in background
 	}
 
     boost::asio::io_context& get_io_context() {
@@ -1178,6 +1169,8 @@ class P2P
             }
         }
         io_context.stop();
+        if(io_thread.joinable())
+            io_thread.join();
     }
 
 };
