@@ -19,18 +19,24 @@ int main()
 	system("cd block && ./block");
 	system("cd crypto && ./crypto");
 	system("cd file && ./file");
+	system("cd p2p && ./p2p");
 #pragma GCC diagnostic pop
 
 	std::ifstream file("test.txt");
 	char data[3];
 	file.read(data, 3);
-	bool one = check(data, 3, '1'), two = check(data, 3, '2'), three = check(data, 3, '3');
-	if(one && two && three) {
+	bool one = check(data, 4, '1');
+    bool two = check(data, 4, '2');
+    bool three = check(data, 4, '3');
+    bool four = check(data, 4, '4');
+
+	if(one && two && three && four) {
 		std::cout << "\n--- ALL TESTS PASSED SUCCESSFULLY ---\n";
 	} else {
 		if(!one) std::cout << "\nFAILED BLOCK TEST";
 		if(!two) std::cout << "\nFAILED CRYPTO TEST";
 		if(!three) std::cout << "\nFAILED FILE TEST";
+		if(!four) std::cout << "\nFAILED P2P TEST";
 		std::cout << std::endl;
 	}
 
