@@ -357,7 +357,7 @@ namespace Cryptography
 	// initialize key
 	class Key : public ErrorHandling
 	{
-		ProtocolData protocol;
+		ProtocolData *protocol;
 
 		public:
 				CryptoPP::DL_GroupParameters_EC<CryptoPP::ECP> group;
@@ -366,6 +366,11 @@ namespace Cryptography
 				uint8_t *key=nullptr; // established key
 
 				Key(ProtocolData &protocol);
+
+                // default constructor
+                Key() = default;
+
+                void init(ProtocolData &protocol);
 
 				~Key();
 

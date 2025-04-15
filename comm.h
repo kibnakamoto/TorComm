@@ -337,8 +337,8 @@ class P2P
 		shared_secret.x.Encode(&packet[0], shared_secret_len, CryptoPP::Integer::UNSIGNED); // add the data to an array (used packet since it's already allocated)
 		key.hkdf(packet, shared_secret_len, (uint8_t*)"", 0, (uint8_t*)"", 0);
         std::cout << "packet: ";
-        for(int i=0;i<shared_secret_len;i++) {
-            std::cout << std::hex << packet[i]+0;
+        for(int i=0;i<protocol.key_size;i++) {
+            std::cout << std::hex << key.key[i]+0;
         }
         std::cout << std::endl;
 		delete[] packet;
@@ -361,11 +361,7 @@ class P2P
             co_return 0; // not the correct message
         }
 
-		// no compression
-		uint16_t xy_len = Cryptography::get_curve_size(protocol.curve);
-
 		uint8_t *packet = new uint8_t[length];
-
 		co_await recv(recv_from, packet, length); // reuse packet
 
 		// check if protocol number exists
@@ -385,7 +381,13 @@ class P2P
 		}
 
 		protocol.init(packet[0]); // re-initialize protocol
-		CryptoPP::ECPPoint public_alice = key.reconstruct_point_from_bytes(&packet[1], xy_len, &packet[xy_len+1], xy_len);
+        key.init(protocol); // re-initialize key with new protocol
+        // TODO: key needs to be reinitialized with correct protocol. Don't call contructor before here maybe
+
+		// no compression
+		uint16_t xy_len = Cryptography::get_curve_size(protocol.curve);
+		CryptoPP::ECPPoint public_alice = key.reconstruct_point_from_bytes(&packet[1], xy_len, 
+                                                                           &packet[xy_len+1], xy_len);
 
 		public_keys.insert({recv_from->remote_endpoint().address().to_string(), &public_alice});
 
@@ -404,10 +406,10 @@ class P2P
 		auto shared_secret = key.multiply(public_alice);
 		uint16_t shared_secret_len = shared_secret.x.MinEncodedSize();
 		shared_secret.x.Encode(&packet[0], shared_secret_len, CryptoPP::Integer::UNSIGNED); // add the data to an array (used packet since it's already allocated)
-		key.hkdf(packet, shared_secret_len, (uint8_t*)"", 0, (uint8_t*)"", 0);
+		key.hkdf(packet, shared_secret_len, (uint8_t*)"", 0, (uint8_t*)"", 0); // key is in key.key
         std::cout << "packet: ";
-        for(int i=0;i<shared_secret_len;i++) {
-            std::cout << std::hex << packet[i]+0;
+        for(int i=0;i<protocol.key_size;i++) {
+            std::cout << std::hex << key.key[i]+0;
         }
         std::cout << std::endl;
 		delete[] packet;
@@ -421,7 +423,6 @@ class P2P
 		// io_context.run();
         std::thread([this] {io_context.run(); }).detach();  // Run in background
 	}
-
 
     boost::asio::io_context& get_io_context() {
         return io_context;
