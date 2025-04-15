@@ -151,18 +151,20 @@ class P2P
 	boost::asio::ip::tcp::resolver resolver;
 	boost::asio::ip::tcp::resolver::results_type endpoints;
 	std::string ip; // get ip of this device
-	Blocked blocked;
+    // std::shared_ptr<Blocked> blocked;
+    Blocked *blocked;
 	std::map<std::string, CryptoPP::ECPPoint *> public_keys; // public keys of peers. ip address is used to access public key
 	// inline static uint32_t max_requests = 10; // the total amount of receive requests that can be made before quitting
 
     public:
 
-	P2P(uint16_t port, Blocked blocked) : listener(boost::asio::ip::tcp::acceptor(io_context,
+	P2P(uint16_t port, Blocked &blocked) : listener(boost::asio::ip::tcp::acceptor(io_context,
                                                                                   boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v6(),
                                                                                                                  port))),
 										  resolver(io_context)
 	{
-		this->blocked = blocked;
+		// this->blocked = std::make_shared<Blocked>(blocked);
+		this->blocked = &blocked;
 		ip = get_ipv6();
 		endpoints = resolver.resolve(ip, std::to_string(port)); // get endpoints
 
@@ -187,7 +189,7 @@ class P2P
 
 		    // if ip address blocked, don't add as a client
 	        auto remote_endpoint = sock->remote_endpoint();
-		    if (!remote_endpoint.address().is_unspecified() && blocked.is_blocked(remote_endpoint.address().to_v6().to_string())) {
+		    if (!remote_endpoint.address().is_unspecified() && blocked->is_blocked(remote_endpoint.address().to_v6().to_string())) {
 		    	std::cout << "\nblocked connection";
 		    	sock->close(); // stop socket because it's blocked
 		    } else {
@@ -276,7 +278,6 @@ class P2P
 		    // wait 3 seconds
             auto executor = co_await boost::asio::this_coro::executor;
             boost::asio::steady_timer timer(executor, boost::asio::chrono::seconds(3));
-		    // boost::asio::steady_timer timer(io_context, boost::asio::chrono::seconds(3));
 		    co_await timer.async_wait(boost::asio::use_awaitable);
 		    if (reattempt_after_fail > 1) { // call if reattempt wanted
 		    	co_return co_await connect(address, port_, reattempt_after_fail - 1);
