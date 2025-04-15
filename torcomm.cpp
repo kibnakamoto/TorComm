@@ -43,6 +43,10 @@
  * SECURITY BUG (SIDE CHANNEL ATTACK) FIXED: HMAC algorithms hmacs plaintext, it should do ciphertext instead. Use encrypt-then-mac (ETM) protocol - Jul 11, 2024
  * SECURITY BUG (SIDE CHANNEL ATTACK) DETECTED: identify AEAD algorithms and make sure that hmac/ecdsa isn't used for them. e.g. GCM should use it's own verification algorithm. integrate this into the Verification class - Done july 18, 2024
  * add ecdsa support on send/recv and protocol data sizes - Done Jul 20 2024
+ * make all socket management shared pointers for management of lifetime of sockets. - Done - Apr 12 2025
+ * sender sends genesis while it's not received. Fix - Done Apr 14 2025
+ * add coroutines to networking. Then it should all work. Develop unit tests for networking. - Done Apr 14
+ *
  */
 
 /* FUTURE TODOS: (Not for version 1.0)
@@ -57,7 +61,7 @@
  */
 
 /* MAJOR:
- * TODO: debug networking code
+ * TODO: debug networking code - currently doing - Apr 14, 2025
  * TODO: for the AEAD algorithms, make sure that the previous ciphertext is used as an AD, this is to make sure that same data cannot be resent.
  */
 
