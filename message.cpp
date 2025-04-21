@@ -155,24 +155,30 @@ uint8_t *Cryptography::ProtocolData::generate_iv()
 
 void Cryptography::ProtocolData::init_cipher_data()
 {
-	ct_size=32;
 	if(communication_protocols[protocol].find("AES256") != std::string::npos) {
 		iv_size = 16;
 		cipher = AES256;
 		key_size = 32;
+	    ct_size=16;
+        block_size = 16;
 	} else if (communication_protocols[protocol].find("AES192") != std::string::npos) {
 		iv_size = 16;
 		cipher = AES192;
 		key_size = 24;
+	    ct_size=16;
+        block_size = 16;
 	} else if (communication_protocols[protocol].find("AES128") != std::string::npos) {
 		iv_size = 16;
 		cipher = AES128;
 		key_size = 16;
+	    ct_size=16;
+        block_size = 16;
 	} else if (communication_protocols[protocol].find("CHACHA20") != std::string::npos) {
 		iv_size = 8;
 		cipher = CHACHA20;
 		key_size = 32;
-		block_size = ct_size;
+	    ct_size=64;
+		block_size = 64;
 	} else {
 		error = ENCRYPTION_ALGORITHM_NOT_FOUND;
 	}
@@ -180,10 +186,10 @@ void Cryptography::ProtocolData::init_cipher_data()
 	// set cipher mode
 	if(communication_protocols[protocol].find("CBC") != std::string::npos) {
 		cipher_mode = CBC;
-		block_size=ct_size; // TODO: URGENT: BLOCK_SIZE ISN'T EQUAL TO CIPHERTEXT SIZE. 16 bytes
+		block_size= ct_size;
 	} else if(communication_protocols[protocol].find("GCM") != std::string::npos) {
 		cipher_mode = GCM;
-		block_size=ct_size; // block-size is ciphertext size in gcm-mode
+		block_size= ct_size; // block-size is ciphertext size in gcm-mode
 	} else { // e.g. CHACHA20, no cipher mode
 		cipher_mode = NO_MODE;
 	}

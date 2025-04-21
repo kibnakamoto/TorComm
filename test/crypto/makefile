@@ -9,10 +9,23 @@ EXEC = crypto
 OBJS = crypto.o ../../comm.o ../../message.o ../../keys.o ../../settings.o 
 
 all: ${OBJS}
-	${CXX} ${CXXFLAGS}  ${OBJS} -o ${EXEC} ${FLAGS}
-	
-%.o: %.cpp
-	${CXX} ${CXXFLAGS} $< -c ${FLAGS}
+	${CXX} ${CXXFLAGS} ${OBJS} -o ${EXEC} ${FLAGS}
+
+# dependencies on base
+../../comm.o: ../../comm.cpp ../../comm.h
+	${CXX} ${CXXFLAGS} -c ../../comm.cpp -o $@ ${FLAGS}
+
+../../message.o: ../../message.cpp ../../message.h
+	${CXX} ${CXXFLAGS} -c ../../message.cpp -o $@ ${FLAGS}
+
+../../keys.o: ../../keys.cpp ../../keys.h
+	${CXX} ${CXXFLAGS} -c ../../keys.cpp -o $@ ${FLAGS}
+
+../../settings.o: ../../settings.cpp ../../settings.h
+	${CXX} ${CXXFLAGS} -c ../../settings.cpp -o $@ ${FLAGS}
+
+crypto.o: crypto.cpp ../../comm.h ../../message.h ../../keys.h ../../settings.h
+	${CXX} ${CXXFLAGS} -c crypto.cpp -o crypto.o ${FLAGS}
 
 .PHONY: clean
 clean:
