@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++2b -Wall -pedantic -Wextra -O4 -g -fcoroutines
+CXXFLAGS = -std=c++2b -Wall -pedantic -Wextra -g -fcoroutines
 CRYPTOPP_FLAGS =   -Iinclude -Llib -lcryptopp -lpthread
 JSON_FLAGS = -ljsoncpp
 CURL_FLAGS = -lcurl
