@@ -527,6 +527,25 @@ namespace Cryptography
 				    delete[] data;
 				    return dat;
 				}
+
+				char *pad(std::string data, std::unsigned_integral auto &length)
+				{
+				    char *dat;
+					int8_t pad_size;
+				    std::remove_reference_t<decltype(length)> original_length = length;
+					uint8_t mod = length % protocol.block_size;
+				    pad_size = protocol.block_size - mod;
+					if(mod == 0) // if 32-byte unpadded, then pad_size=0, if zero, than dat[length-1] = pad_size would modify the plaintext
+						pad_size += protocol.block_size;
+				    length += pad_size;
+				    dat = new char[length];
+				    memcpy(&dat[pad_size], data.c_str(), original_length); // for left to right padding
+					memset(&dat[1], 0, pad_size-1); // pad it to avoid memory errors detected in valgrind
+					dat[0] = pad_size;
+				    // memcpy(dat, data, original_length);				  // for right to left padding (append to end of message)
+					// dat[length-1] = pad_size; // last digit of data is length
+				    return dat;
+				}
 	};
 
 	// Decryption
@@ -581,6 +600,14 @@ namespace Cryptography
 				data = new_data;
 			
 				return pad_size;
+			}
+
+            // remove padding for string
+			void unpad(std::string &data, std::unsigned_integral auto &length)
+			{
+				uint8_t pad_size = data[0];
+				length -= pad_size;
+                data.erase(0, pad_size);
 			}
 
 			// if gcm mode, return if it's verified.

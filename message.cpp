@@ -180,7 +180,7 @@ void Cryptography::ProtocolData::init_cipher_data()
 	// set cipher mode
 	if(communication_protocols[protocol].find("CBC") != std::string::npos) {
 		cipher_mode = CBC;
-		block_size=ct_size;
+		block_size=ct_size; // TODO: URGENT: BLOCK_SIZE ISN'T EQUAL TO CIPHERTEXT SIZE. 16 bytes
 	} else if(communication_protocols[protocol].find("GCM") != std::string::npos) {
 		cipher_mode = GCM;
 		block_size=ct_size; // block-size is ciphertext size in gcm-mode
@@ -811,8 +811,8 @@ Cryptography::Verifier::Verifier(ProtocolData &protocol, Key &key, Cipher *ciphe
 		mac = Cipher::to_uint8_ptr(cipher->get_mac_gcm()); // already generated
 		this->decipher = decipher;
 		#if DEBUG_MODE
-			if(decipher == nullptr) {
-				throw std::runtime_error("Verifier::Verifier: DECIPHER NULL error. In GCM mode, decipher object has to be non-nullptr");
+			if(decipher == nullptr && cipher == nullptr) {
+				throw std::runtime_error("Verifier::Verifier: DECIPHER NULL error. In GCM mode, decipher or cipher object has to be non-nullptr");
 			}
 		#endif
 	}
@@ -850,7 +850,7 @@ void Cryptography::Verifier::verify(uint8_t *ct=nullptr, uint64_t ct_len=0, uint
 		ecdsa->verify(pt, pt_len, mac, *public_key);
 		verified = ecdsa->is_verified();
 	} else { // GCM
-		verified = decipher->is_verified_gcm();
+	    verified = decipher->is_verified_gcm();
 	} 
 }
 

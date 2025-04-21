@@ -19,6 +19,7 @@
 #ifndef COMM_H
 #define COMM_H
 
+#include <boost/system/system_error.hpp>
 #include <stdexcept>
 #include <stdint.h>
 #include <string>
@@ -61,6 +62,16 @@ concept Packet_T_Type = requires(T t)
 	{
 		(std::same_as<T, std::string> || 
 		 std::same_as<T, uint8_t*>)
+	};
+};
+
+// type of Packet template T
+template<typename T>
+concept Receiver_Type = requires(T t)
+{
+	{
+		(std::same_as<T, std::string> || // ip address
+		 std::same_as<T, std::shared_ptr<boost::asio::ip::tcp::socket>>) // socket
 	};
 };
 
@@ -452,6 +463,24 @@ class P2P
 		_send(sender, boost::asio::buffer(msg));
 	}
 
+    /* waitable send */
+
+	// send network packet to address
+    boost::asio::awaitable<void>
+    send_awaitable(std::shared_ptr<boost::asio::ip::tcp::socket> sender, uint8_t *packet, std::unsigned_integral auto length)
+	{
+		// client sends network packet
+		co_await _send_awaitable(sender, boost::asio::buffer(packet, length));
+	}
+
+	// send network packet to address
+	boost::asio::awaitable<void>
+    send_awaitable(std::shared_ptr<boost::asio::ip::tcp::socket> sender, std::string msg)
+	{
+		// client sends network packet
+		co_await _send_awaitable(sender, boost::asio::buffer(msg));
+	}
+
 	// send genesis packet
 	void send_genesis(uint64_t len, uint8_t type)
 	{
@@ -538,30 +567,33 @@ class P2P
 	// length: length of dat, if file type is a file, then it's the length of filename
 	// type: type of message
 	// received_from: the socket which received this data
-	// file_path: if data type is a file, save to file
 	// all parameters are empty until received_from (including),
 	// return: successfully received, false if no one is sending, true if function successfully called
 	// RUN this function using another thread, this means there are 3 threads for communiciation, 2 for receiver, 1 for sender.
-	bool recv_full(std::string dat, uint64_t &length, DATA_FORMAT &type,
-				   std::shared_ptr<boost::asio::ip::tcp::socket> received_from, Cryptography::ProtocolData &protocol,
-				   Cryptography::Decipher decipher, auto got_decipher, Cryptography::Verifier verifier, std::string file_path="")
+    boost::asio::awaitable<void>
+    recv_full(std::shared_ptr<boost::asio::ip::tcp::socket> received_from, std::string &dat,
+              DATA_FORMAT &type, Cryptography::ProtocolData &protocol, Cryptography::Decipher decipher,
+              Cryptography::Verifier &verifier, ERRORS &error)
 	{
 		// first receive genesis packet
-		uint8_t type_;
 		const uint16_t security_len = protocol.mac_size + protocol.iv_size;
 		uint8_t div = (protocol.ct_size/protocol.block_size)-1; // ratio of ciphertext length to plaintext length, subtract 1 because will use operator<< rather than operator* (N << 1 = N * 2)
 		uint8_t *iv = new uint8_t[protocol.iv_size];
 		uint8_t *data;
-		//received_from = recv_genesis(received_from, length, type_);
+
 		if(received_from == nullptr) {
-			return 0; // no one is sending
+            error = ERRORS::NO_ONE_SENDING;
+            co_return;
 		}
+
+        // receive genesis packet
+	    auto [length, type_] = co_await recv_genesis(received_from);
+
 		type = (DATA_FORMAT)((uint16_t)type_<<5); // converted to uint16 so that the shift doesn't overflow
 
 		/* PADDING OF FILES:
 		 * before filename length, add a one byte padding length. When writing to a file, only add up to the length - padding_length
 		 */
-
 
 		// receive full packet
 		if(type == DATA_FORMAT::_FILE_) {
@@ -571,7 +603,7 @@ class P2P
 			// no segmentation needed
 			if(length <= NO_SEGMENTATION_SIZES::NSEG_FILE_SIZE) {
 				data = new uint8_t[length]; // ciphertext data
-				recv(received_from, data, length); // receive the data
+				co_await recv(received_from, data, length); // receive the data
 				uint64_t cipher_len = length-security_len;
 				pt_len = cipher_len >> div;
 				plain = new uint8_t[pt_len];
@@ -595,9 +627,9 @@ class P2P
 				length = pt_len-data_start_index; // set length of file
 
 				// verify
-				bool verified = verifier.verify(&data[security_len], cipher_len, plain, pt_len, data,
+				verifier.verify(&data[security_len], cipher_len, plain, pt_len, data,
 												public_keys.at(received_from->remote_endpoint().address().to_string())); // verified is saved in verifier
-				if(verified) { // if correct data, save it
+				if(verifier.is_verified()) { // if correct data, save it
 					std::ofstream file(dat);// add the file data to a file
 					file.write(reinterpret_cast<char*>(&plain[data_start_index]), length);
 					file.close();
@@ -606,7 +638,7 @@ class P2P
 				const uint16_t cipher_len = (type + protocol.block_size)<<div; // ciphertext length per packet
 				const uint16_t packet_len = security_len + cipher_len; // length of every packet
 				data = new uint8_t[packet_len]; // whole data
-				recv(received_from, data, packet_len); // receive the data
+				co_await recv(received_from, data, packet_len); // receive the data
 
 				// data format: MAC + IV + encrypted(pad-size + padding + filename-length + filename + DATA)
 				memcpy(iv, &data[protocol.mac_size], protocol.iv_size); // get iv
@@ -617,13 +649,14 @@ class P2P
 				decipher.assign_iv(iv);
 				decipher.decrypt(&data[security_len], cipher_len, plain, pt_len, data);
 
-				bool verified = verifier.verify(&data[security_len], cipher_len, plain, pt_len, data,
+				verifier.verify(&data[security_len], cipher_len, plain, pt_len, data,
 												public_keys.at(received_from->remote_endpoint().address().to_string())); // verified is saved in verifier
-				if(!verified) {
+				if(!verifier.is_verified()) {
+                    error = ERRORS::NOT_VERIFIED;
 					delete[] plain;
 					delete[] iv;
 					delete[] data;
-					return 1; // someone was sending so return 1
+					co_return; // someone was sending so return 0, failed received
 				}
 
 				// get file name and padding
@@ -641,7 +674,7 @@ class P2P
 
 				// process rest of the packets
 				while(received_size < length) {
-					recv(received_from, data, packet_len); // receive the data
+					co_await recv(received_from, data, packet_len); // receive the data
 
 					// data format: MAC + IV + encrypted(pad-size + padding + filename-length + filename + DATA)
 					memcpy(iv, &data[protocol.mac_size], protocol.iv_size); // get iv
@@ -651,11 +684,16 @@ class P2P
 					decipher.decrypt(&data[security_len], packet_len, plain, pt_len, data);
 					
 					// verify
-					verified = verifier.verify(&data[security_len], packet_len, plain, pt_len, data,
+					verifier.verify(&data[security_len], packet_len, plain, pt_len, data,
 											   public_keys.at(received_from->remote_endpoint().address().to_string())); // verified is saved in verifier
 
-					if(!verified)
-						break;
+					if(!verifier.is_verified()) {
+			            delete[] plain;
+            		    delete[] iv;
+            		    delete[] data;
+                        error = ERRORS::NOT_VERIFIED;
+                        co_return;
+                    }
 
 					// add rest of data to a file
 					file.write(reinterpret_cast<char*>(plain), pt_len);
@@ -668,7 +706,7 @@ class P2P
 			delete[] plain;
 		} else { // If data is not a file
 			data = new uint8_t[length];
-			recv(received_from, data, length);
+			co_await recv(received_from, data, length);
 
 			// data format: MAC + IV + DATA
 			memcpy(iv, &data[protocol.mac_size], protocol.iv_size); // get iv
@@ -677,24 +715,22 @@ class P2P
 			uint64_t pt_len = length >> div; // plaintext length
 
 			// decrypt
-			uint8_t *tmp = new uint8_t[pt_len];
+            dat.resize(pt_len);
 			decipher.assign_iv(iv);
-			decipher.decrypt(&data[security_len], length, tmp, pt_len, data);
+			decipher.decrypt(&data[security_len], length, (uint8_t*)&dat[0], pt_len, data);
 			length = pt_len; // set length of dat
 
 			// remove padding
-			uint8_t pad_size = decipher.unpad(tmp, pt_len);
-			dat = reinterpret_cast<char*>(tmp);
+		    decipher.unpad(dat, pt_len);
+			// dat = reinterpret_cast<char*>(tmp);
 
 			// verify
-			verifier.verify(&data[security_len], length, tmp, pt_len, data,
+			verifier.verify(&data[security_len], length, (uint8_t*)&dat[0], pt_len, data,
 							public_keys.at(received_from->remote_endpoint().address().to_string())); // verified is saved in verifier
 		}
 
 		delete[] iv;
 		delete[] data;
-
-		return 1;
 
 		/* received data by manually creating the packets
 		// receive all data based on ciphertext length
@@ -733,11 +769,10 @@ class P2P
 			delete[] ct;
 		}
 		*/
-		return 1;
 	}
 
 	private:
-	thread_local static uint64_t received_size; // this is when receiving large file segments
+	inline thread_local static uint64_t received_size; // this is when receiving large file segments
 
 
 	// prepare file to send, add file-name
@@ -779,18 +814,30 @@ class P2P
 
 	// NOTE: if data size is larger than the ram can handle, send in segments. It is necesarry for large data.
 	// 	This function is for the whole send protocol for a single message.
+    // 	receiver: ip address of receiver or socket
 	// 	data: plaintext data (string or uint8_t*), if file, string file-path (IF type is _FILE_)
 	// 	length: length of data
 	// 	type: type of message
 	// 	got_cipher: cipher.get_cipher();
 	// 	verifier: hmac/ecdsa/GCM
-	void send_full(std::string dat, DATA_FORMAT type,
-				   Cryptography::ProtocolData &protocol,
-				   Cryptography::Cipher &cipher, Cryptography::Verifier verifier)
+    boost::asio::awaitable<bool>
+    send_full(Receiver_Type auto &receiver, std::string dat, DATA_FORMAT type, Cryptography::ProtocolData &protocol,
+			  Cryptography::Cipher &cipher, Cryptography::Verifier &verifier)
 	{
 		uint64_t length = dat.length();
 		const uint16_t security_len = protocol.mac_size + protocol.iv_size;
 		uint8_t div = (protocol.ct_size/protocol.block_size)-1; // ratio of ciphertext length to plaintext length, subtract 1 because will use operator<< rather than operator* (N << 1 = N * 2)
+        std::shared_ptr<boost::asio::ip::tcp::socket> send_to;
+
+        // get sockets to work with
+        if constexpr(std::same_as<decltype(receiver), std::string()>) {
+            send_to = find_to_send(receiver);
+        } else {
+            send_to = receiver; // if socket
+        }
+
+        if(!send_to)
+            co_return 0; // ip address doesn't point to valid peer
 
 		// data format for text: MAC + IV + DATA
 		// data format for file: MAC + IV + PADDING LENGTH + PADDING + file-name length + file-name + DATA
@@ -798,7 +845,6 @@ class P2P
 		// if file type, then make sure to segment data before sending in segments. This is because the file can get really large and not fit in ram
 		if(type == DATA_FORMAT::_FILE_) {
 			// assumes dat is string file path
-			static_assert(std::is_same<decltype(dat), std::string>()); // make sure type is correct, otherwise there is a bug
 
 			// calculate length of file-name + file-length variable
 			// the file name length is kept in a 2-byte variable, if overfills, it will send the parts of name that fits
@@ -826,7 +872,7 @@ class P2P
 				packet = new uint8_t[packet_len]; // contains mac, iv ciphertext file name and data
 			
 				// send genesis packet
-				send_genesis(packet_len, (uint16_t)type>>5);
+				send_genesis(send_to, packet_len, (uint16_t)type>>5);
 
 				// copy file-name length (2-byte), file name and the pad-size (1-byte)
 				prepare_file(data, dat, file_name_len, pad_size);
@@ -848,7 +894,7 @@ class P2P
 				memcpy(&packet[protocol.mac_size], iv, protocol.iv_size);
 
 				// send data, tcp will break down the data
-				send(packet, packet_len);
+				send(send_to, packet, packet_len);
 
 			} else { // data requires segmentation:
 				const uint16_t cipher_len = (type + (protocol.block_size - type%protocol.block_size))<<div; // ciphertext length per packet
@@ -859,7 +905,7 @@ class P2P
 				CryptoPP::AutoSeededRandomPool rnd;
 
 				// send genesis packet
-				send_genesis(packet_len, (uint16_t)type>>5);
+				send_genesis(send_to, packet_len, (uint16_t)type>>5);
 
 				// add file name to the first packet
 				prepare_file(data, dat, file_name_len, pad_size);
@@ -888,7 +934,7 @@ class P2P
 					memcpy(&packet[protocol.mac_size], iv, protocol.iv_size);
 
 					// send packet by packet
-					send(packet, packet_len);
+					send(send_to, packet, packet_len);
 					
 					data_start_index = 0; // at first, needs to be 2 + file_name_len because it's the first packet with data and needs to have file name
 				}
@@ -896,44 +942,41 @@ class P2P
 			delete[] data;
 			delete[] packet;
 			delete[] iv;
-
-			return;
 		}
 
 		// For text or delete:
 
 		// find length of full data to send:
-		uint8_t *packet;
 		uint8_t *iv = protocol.generate_iv(); // get new iv
 
 		 // pad data
-		if(length%protocol.block_size != 0) {
-			dat = cipher.pad(&dat[0], length);
-		}
+		char *data = cipher.pad(dat, length);
 
-		uint64_t len = (length + dat[0])<<div; // ciphertext length
+		uint64_t len = length<<div; // ciphertext length
 		uint64_t full_len = len+security_len;
-		packet = new uint8_t[full_len];
+        uint8_t *packet = new uint8_t[full_len];
 
 		// encrypt
 		cipher.assign_iv(iv);
-		cipher.encrypt(reinterpret_cast<uint8_t*>(&dat[0]), length, &packet[security_len], len);
+		cipher.encrypt(reinterpret_cast<uint8_t*>(&data[0]), length, &packet[security_len], len);
 
 		// generate HMAC
-		verifier.generate(&packet[security_len], len, reinterpret_cast<uint8_t*>(&dat[dat[0]]), length-dat[0]); // make sure padding is not included in plaintext
+		verifier.generate(&packet[security_len], len, reinterpret_cast<uint8_t*>(&data[(uint16_t)data[0]]), length-data[0]); // make sure padding is not included in plaintext
 
 		// copy mac and iv
 		memcpy(packet, verifier.get_mac(), protocol.mac_size);
 		memcpy(&packet[protocol.mac_size], iv, protocol.iv_size);
 
 		// send genesis packet
-		send_genesis(full_len, (uint16_t)type>>5);
+		send_genesis(send_to, full_len, (uint16_t)type>>5);
 
 		// send data, tcp will break down the data
-		send(packet, full_len);
+		co_await send_awaitable(send_to, packet, full_len);
 
 		delete[] iv;
 		delete[] packet;
+        delete[] data;
+        co_return 1;
 		/*
 
 		// partition data (if required), encrypt and send
@@ -1014,7 +1057,7 @@ class P2P
 		    uint8_t packet_size = 9;
             auto dat = std::make_shared<uint8_t[]>(packet_size);
 		    for(auto &client : clients) {
-		    	if(client->available()) { // if there is data to read
+		    	if(client->available()) { // if there is data to read // TODO: this function won't work async
 		    		co_await boost::asio::async_read(*client.get(),
                                                      boost::asio::buffer(dat.get(), packet_size),
                                                      boost::asio::use_awaitable);
@@ -1114,6 +1157,22 @@ class P2P
 		});
 	}
 
+	// only send to this address
+    boost::asio::awaitable<void>
+    _send_awaitable(std::shared_ptr<boost::asio::ip::tcp::socket> sender, Boost_Buffer_Type auto packet)
+	{
+		// send network packet to client
+        try {
+    		co_await boost::asio::async_write(*sender.get(), packet, boost::asio::use_awaitable);
+        } catch(boost::system::system_error &e) {
+			if (log_network_issues) {
+				std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+				file << "\nerror in P2P::_send(ip, packet): " << e.what();
+				file.close();
+			}
+        }
+	}
+
 	// only receive from this address
 	boost::asio::awaitable<void>
     _recv(std::shared_ptr<boost::asio::ip::tcp::socket> receiver, Boost_Buffer_Type auto &data)
@@ -1127,7 +1186,6 @@ class P2P
 	        	file.close();
 	        }
         }
-        co_return;
 	}
 
 	// receive from everybody

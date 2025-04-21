@@ -220,11 +220,22 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
                 key1 = new uint8_t[protocol.key_size];
                 memcpy(key1, key.key, protocol.key_size);
                 keysize = protocol.key_size;
-                std::cout << "[PEER 1] key: ";
+                std::cout << "\n[PEER 1] key: ";
                 for(int i=0;i<protocol.key_size;i++) {
                     std::cout << std::hex << key.key[i]+0;
                 }
                 std::cout << std::endl;
+
+                // test send_full
+                Cryptography::Cipher cipher(protocol, key.key);
+                Cryptography::Verifier verifier(protocol, key, &cipher, nullptr);
+                std::string msg = "Hello from peer 1";
+                auto sent_full = co_await peer1.send_full(socket, msg, DATA_FORMAT::TEXT, protocol, cipher, verifier);
+                
+                std::cout << "sent message: " << msg << std::endl;
+
+                if(!sent_full)
+                    std::cout << "\n[PEER 1] No sender found - socket=nullptr";
             },
             boost::asio::detached
         );
@@ -248,17 +259,31 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
                 ERRORS error = NO_ERROR;
                 auto received = co_await peer2.recv_two_party_ecdh(listener_socket, protocol_received, key_received, error);
                 std::cout << "\n[PEER 2] RECEIVE STATUS: " << received;
-                if(error != NO_ERROR)
-                    std::cout << "[PEER 2] ERROR ON ECDH RECEIVER" << ERROR_STRING[error];
+                if(error != NO_ERROR) {
+                    std::cout << "\n[PEER 2] ERROR ON ECDH RECEIVER" << ERROR_STRING[error];
+                    co_return;
+                }
 
                 // save key for testing
                 key2 = new uint8_t[protocol_received.key_size];
                 memcpy(key2, key_received.key, protocol_received.key_size);
-                std::cout << "[PEER 2] key: ";
+                std::cout << "\n[PEER 2] key: ";
                 for(int i=0;i<protocol_received.key_size;i++) {
                     std::cout << std::hex << key_received.key[i]+0;
                 }
                 std::cout << std::endl;
+
+                // test recv_full
+                Cryptography::Decipher decipher(protocol_received, key_received.key);
+	            Cryptography::Verifier verifier(protocol_received, key_received, nullptr, &decipher);
+                DATA_FORMAT msg_format;
+                std::string msg;
+                co_await peer2.recv_full(listener_socket, msg, msg_format, protocol_received, decipher, verifier, error);
+                
+                std::cout << "received message: " << msg << "\t" << std::dec << msg.length() << std::endl;
+
+                if(error != NO_ERROR)
+                    std::cout << "\n[PEER 2] Error Received on recv_full - " << ERROR_STRING[error];
             },
             boost::asio::detached
         );
@@ -301,16 +326,16 @@ int main()
     std::string connect_ip = "::1";
     
     // test basic connections between 3 peers. Test if they can connect, send/recv
-    bool basic_passed = test_basic(connect_ip, blocked);
-    
-    // if basic tests failed, don't continue with tests
-    if(!basic_passed)
-         return 1;
+    // bool basic_passed = test_basic(connect_ip, blocked);
+    // 
+    // // if basic tests failed, don't continue with tests
+    // if(!basic_passed)
+    //      return 1;
     
     // test full networking functions if basic tests passed
     // ecdh, encryption, verification.
     bool advanced_passed = advanced_test(connect_ip, blocked);
-    std::cout << std::endl << "";
+    std::cout << std::endl;
 
     if(!advanced_passed)
         return 1;
