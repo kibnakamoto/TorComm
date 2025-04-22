@@ -228,14 +228,26 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
 
                 // test send_full
                 Cryptography::Cipher cipher(protocol, key.key);
-                Cryptography::Verifier verifier(protocol, key, &cipher, nullptr);
+                Cryptography::Decipher decipher(protocol, key.key);
+                Cryptography::Verifier verifier(protocol, key, &cipher, &decipher);
                 std::string msg = "Hello from peer 1";
                 auto sent_full = co_await peer1.send_full(socket, msg, DATA_FORMAT::TEXT, protocol, cipher, verifier);
-                
-                std::cout << "sent message: " << msg << std::endl;
 
                 if(!sent_full)
                     std::cout << "\n[PEER 1] No sender found - socket=nullptr";
+                
+                std::cout << "[PEER 1] sent message: " << msg << std::endl;
+
+                // receive file from peer 1
+                std::string file_name;
+                DATA_FORMAT msg_format;
+                ERRORS error;
+                co_await peer1.recv_full(listener_socket, file_name, msg_format, protocol, decipher, verifier, error);
+
+                if(error != NO_ERROR)
+                    std::cout << "\n[PEER 1] Error Received on recv_full - " << ERROR_STRING[error];
+
+                std::cout << "[PEER 1] received file: " << file_name << std::endl;
             },
             boost::asio::detached
         );
@@ -273,17 +285,27 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
                 }
                 std::cout << std::endl;
 
-                // test recv_full
+                // test recv_full and send_full
                 Cryptography::Decipher decipher(protocol_received, key_received.key);
-	            Cryptography::Verifier verifier(protocol_received, key_received, nullptr, &decipher);
+                Cryptography::Cipher cipher(protocol_received, key_received.key);
+	            Cryptography::Verifier verifier(protocol_received, key_received, &cipher, &decipher);
                 DATA_FORMAT msg_format;
                 std::string msg;
                 co_await peer2.recv_full(listener_socket, msg, msg_format, protocol_received, decipher, verifier, error);
                 
-                std::cout << "received message: " << msg << "\t" << std::dec << msg.length() << std::endl;
+                std::cout << "[PEER 2] received message: " << msg << "\t" << std::endl;
 
                 if(error != NO_ERROR)
                     std::cout << "\n[PEER 2] Error Received on recv_full - " << ERROR_STRING[error];
+
+                // peer 2 sends a file to peer 1
+                std::string file_name = "example.txt";
+                auto sent_full = co_await peer2.send_full(socket, file_name, DATA_FORMAT::_FILE_, protocol_received, cipher, verifier);
+
+                if(!sent_full)
+                    std::cout << "\n[PEER 2] No sender found - socket=nullptr";
+
+                std::cout << "[PEER 2] sent file: " << file_name << std::endl;
             },
             boost::asio::detached
         );
