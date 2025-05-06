@@ -175,6 +175,35 @@ bool test_basic(std::string connect_ip, Blocked &blocked)
     return passed;
 }
 
+bool files_equal(std::string path1, std::string path2)
+{
+    // make sure lengths are the same
+    if (std::filesystem::file_size(path1) != std::filesystem::file_size(path2))
+        return 0;
+
+    // read from files, check if their data is the same
+    std::ifstream stream1(path1);
+    std::ifstream stream2(path2);
+    
+    constexpr uint16_t segment_sizes = 0xff;
+    char segment1[segment_sizes];
+    char segment2[segment_sizes];
+	while(stream1.good()) {
+		// read the segment of data from file
+		stream1.read(segment1, segment_sizes);
+		stream2.read(segment2, segment_sizes);
+	    long int s_size1=stream1.gcount();
+
+        // make sure they read the same amount
+        if (s_size1 != stream2.gcount() || memcmp(segment1, segment2, s_size1) != 0)
+            return 0;
+    }
+    stream1.close();
+    stream2.close();
+
+    return 1;
+}
+
 // advanced test for testing two-party full networking
 bool advanced_test(std::string connect_ip, Blocked &blocked)
 {
@@ -188,16 +217,19 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
 
     // check if each test passed for the 3 peers (if they received the correct message)
     // shared secrets
-    std::atomic<uint8_t*> key1; // correctly receive from 2
-    std::atomic<uint8_t*> key2; // correctly receive from 1
-    std::atomic<uint16_t> keysize;
+    uint8_t* key1; // correctly receive from 2
+    uint8_t* key2; // correctly receive from 1
+    uint16_t keysize;
+    bool msg_received; // correctly receive from 1
+    bool no_segment_file_received; // correctly receive from 2
+    bool segmented_file_received; // correctly receive from 2
 
-    std::thread t1([&peer1, peer2_port, connect_ip, &key1, &keysize] {
+    std::thread t1([&peer1, peer2_port, connect_ip, &key1, &keysize, &no_segment_file_received, &segmented_file_received] {
 
         // connector and acceptor
         boost::asio::co_spawn(
             peer1.get_io_context(),
-            [&peer1, connect_ip, peer2_port, &key1, &keysize]() -> boost::asio::awaitable<void> {
+            [&peer1, connect_ip, peer2_port, &key1, &keysize, &no_segment_file_received, &segmented_file_received]() -> boost::asio::awaitable<void> {
                 // set cryptography
                 Cryptography::Curves curve = Cryptography::SECP256K1;
                 Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_HMAC_AES256_CBC_SHA512;
@@ -236,29 +268,48 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
                 if(!sent_full)
                     std::cout << "\n[PEER 1] No sender found - socket=nullptr";
                 
-                std::cout << "[PEER 1] sent message: " << msg << std::endl;
+                std::cout << "\n[PEER 1] sent message: " << msg << std::endl;
 
                 // receive file from peer 1
                 std::string file_name;
                 DATA_FORMAT msg_format;
                 ERRORS error;
                 co_await peer1.recv_full(listener_socket, file_name, msg_format, protocol, decipher, verifier, error);
+                no_segment_file_received = files_equal(file_name, "files/example.txt"); // check if received correctly
+
+                if(!no_segment_file_received)
+                    std::cout << "\n[PEER 1] non-segmented file is received wrong";
 
                 if(error != NO_ERROR)
                     std::cout << "\n[PEER 1] Error Received on recv_full - " << ERROR_STRING[error];
 
-                std::cout << "[PEER 1] received file: " << file_name << std::endl;
+                std::cout << "\n[PEER 1] received file: " << file_name << std::endl;
+
+                // receive large file from peer 1
+                std::string long_file_name;
+                DATA_FORMAT msg_format2;
+                co_await peer1.recv_full(listener_socket, long_file_name, msg_format2, protocol, decipher, verifier, error);
+
+                segmented_file_received = files_equal(long_file_name, "files/large_file.txt"); // check if received correctly
+
+                std::cout << "\n[PEER 1] received file: " << long_file_name << std::endl;
+
+                if(!segmented_file_received)
+                    std::cout << "\n[PEER 1] segmented file is received wrong";
+
+                if(error != NO_ERROR)
+                    std::cout << "\n[PEER 1] Error Received on recv_full - " << ERROR_STRING[error];
             },
             boost::asio::detached
         );
         peer1.start_async();
     });
 
-    std::thread t2([&peer2, peer1_port, connect_ip, &key2] {
+    std::thread t2([&peer2, peer1_port, connect_ip, &key2, &msg_received] {
         // connector and acceptor
         boost::asio::co_spawn(
             peer2.get_io_context(),
-            [&peer2, peer1_port, connect_ip, &key2]() -> boost::asio::awaitable<void> {
+            [&peer2, peer1_port, connect_ip, &key2, &msg_received]() -> boost::asio::awaitable<void> {
                 Cryptography::ProtocolData protocol_received;
                 Cryptography::Key key_received;
                 auto socket = co_await peer2.connect(connect_ip, peer1_port);
@@ -293,19 +344,30 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
                 std::string msg;
                 co_await peer2.recv_full(listener_socket, msg, msg_format, protocol_received, decipher, verifier, error);
                 
-                std::cout << "[PEER 2] received message: " << msg << "\t" << std::endl;
+                std::cout << "\n[PEER 2] received message: " << msg << "\t" << std::endl;
 
                 if(error != NO_ERROR)
                     std::cout << "\n[PEER 2] Error Received on recv_full - " << ERROR_STRING[error];
 
-                // peer 2 sends a file to peer 1
-                std::string file_name = "example.txt";
-                auto sent_full = co_await peer2.send_full(socket, file_name, DATA_FORMAT::_FILE_, protocol_received, cipher, verifier);
+                msg_received = msg == "Hello from peer 1";
+                if(!msg_received) {
+                    std::cout << "\n[PEER 2] Received message is wrong";
+                }
 
-                if(!sent_full)
-                    std::cout << "\n[PEER 2] No sender found - socket=nullptr";
+                // peer 2 sends a file to peer 1
+                std::string file_name = "files/example.txt";
+                auto sent_full1 = co_await peer2.send_full(socket, file_name, DATA_FORMAT::_FILE_, protocol_received, cipher, verifier);
 
                 std::cout << "[PEER 2] sent file: " << file_name << std::endl;
+
+                std::string long_file_name = "files/large_file.txt";
+                auto sent_full2 = co_await peer2.send_full(socket, long_file_name, DATA_FORMAT::_FILE_, protocol_received, cipher, verifier);
+
+                if(!sent_full1 || !sent_full2)
+                    std::cout << "\n[PEER 2] No sender found - socket=nullptr";
+
+                std::cout << "[PEER 2] sent file: " << long_file_name << std::endl;
+
             },
             boost::asio::detached
         );
@@ -313,12 +375,13 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
     });
     
     // sleep for 3 seconds for the connections to happen, adjust if needed 
-    std::this_thread::sleep_for(std::chrono::seconds(3));
+    std::this_thread::sleep_for(std::chrono::seconds(5));
     
     // join threads
     t1.join();
     t2.join();
 
+    // check if keys are equal (ECDH)
     bool equal = true;
     for(uint16_t i=0;i<keysize;i++) {
         if(key1[i] != key2[i]) {
@@ -329,10 +392,11 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
 
     // if sent key = received key
     std::cout << "\n\n------------------------------------";
-    if(equal) {
+    if(equal && msg_received && no_segment_file_received && segmented_file_received) {
         std::cout << "\nPASSED Advanced Tests for Networking";
     } else {
-        std::cout << "\nFAILED advanced tests for networking";
+        std::cout << "\nFAILED advanced tests (t1, t2, t3, t4): (" << equal << ", " << msg_received
+                  << ", " << no_segment_file_received << ", " << segmented_file_received <<  ")";
     }
     std::cout << "\n------------------------------------" << std::endl;
     delete[] key1;
