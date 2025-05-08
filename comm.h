@@ -622,7 +622,7 @@ class P2P
 				dat = read_file(plain, file_name_len, pad_size);
 				
 				// add rest of data to a file
-				const uint32_t data_start_index = 3 + pad_size + (uint32_t)file_name_len; // this is the index where the file content start.
+				const uint32_t data_start_index = 2U + pad_size + (uint32_t)file_name_len; // this is the index where the file content start.
 
 			    length = pt_len-data_start_index; // set length of file
 
@@ -653,8 +653,8 @@ class P2P
 				file.write(reinterpret_cast<char*>(&plain[data_start_index]), length);
 				file.close();
 			} else { // a large file, needs segmentation
-                constexpr uint32_t packet_len = NO_SEGMENTATION_SIZES::NSEG_FILE_SIZE;
-				const uint32_t cipher_len = packet_len-security_len; // ciphertext length per packet
+                uint32_t packet_len = NO_SEGMENTATION_SIZES::NSEG_FILE_SIZE;
+				uint32_t cipher_len = packet_len-security_len; // ciphertext length per packet
 				pt_len = cipher_len>>div; // plaintext length per ciphertext
 				// const uint16_t cipher_len = (type + protocol.block_size)<<div; // ciphertext length per packet
 				// const uint16_t packet_len = security_len + cipher_len; // length of every packet
@@ -687,7 +687,7 @@ class P2P
 				dat = read_file(plain, file_name_len, pad_size);
 				
 				// add file data to a file
-				const uint32_t data_start_index = 3U + pad_size + (uint32_t)file_name_len; // this is the index where the file content start.
+				const uint32_t data_start_index = 2U + pad_size + (uint32_t)file_name_len; // this is the index where the file content start.
 				const uint64_t newlen = pt_len - data_start_index; // remove other data.
 
                 // select filename (increment by 1 if already exists)
@@ -705,25 +705,33 @@ class P2P
                 }
 				std::ofstream file(dat);// add the file data to a file
 				file.write(reinterpret_cast<char*>(&plain[data_start_index]), newlen);
-				//file.close();
+				file.close();
 
-				received_size = packet_len; // static thread_local variable
+				received_size = cipher_len; // static thread_local variable
 
 				// process rest of the packets
 				while(received_size < length) {
-                    // file = std::ofstream(dat);
+                    // calculate last size for final segment
+                    uint64_t last_size = length-received_size; // plaintext size
+                    if(pt_len > last_size) { // if last packet
+                        cipher_len = last_size; // received ciphertext size
+                        packet_len = cipher_len+security_len; // update packet_len
+				        pt_len = cipher_len>>div; // plaintext length per ciphertext
+                    }
 
 					co_await recv(received_from, data, packet_len); // receive the data
 
-					// data format: MAC + IV + encrypted(pad-size + padding + filename-length + filename + DATA)
+					// data format for first packet: MAC + IV + encrypted(pad-size + padding + filename-length + filename + DATA)
+					// data format for next packet: MAC + IV + encrypted(filename + DATA)
 					memcpy(iv, &data[protocol.mac_size], protocol.iv_size); // get iv
+                                                                            // TODO: why copy iv
 
-					// decrypt
+                    // decrypt
 					decipher.assign_iv(iv);
-					decipher.decrypt(&data[security_len], packet_len, plain, pt_len, data);
+					decipher.decrypt(&data[security_len], cipher_len, plain, pt_len, data);
 					
 					// verify
-					verifier.verify(&data[security_len], packet_len, plain, pt_len, data,
+					verifier.verify(&data[security_len], cipher_len, plain, pt_len, data,
 											   public_keys.at(received_from->remote_endpoint().address().to_string())); // verified is saved in verifier
 
 					if(!verifier.is_verified()) {
@@ -735,12 +743,13 @@ class P2P
                     }
 
 					// add rest of data to a file
+                    file.open(dat, std::ios::app);
 					file.write(reinterpret_cast<char*>(plain), pt_len);
+				    file.close();
 
-					received_size+=packet_len;
-                    std::cout << received_size << "\t";
+					received_size+=pt_len;
+                    std::cout << std::dec << received_size << "\t";
 				}
-				file.close();
 			}
 
 			delete[] plain;
@@ -785,7 +794,7 @@ class P2P
 		data[0] = padding;
 
 		// add padding
-		memset(&data[1], 0, padding);
+		memset(&data[1], 0, padding-1);
 
 		data[padding+0] = file_name_len >> 8;
 		data[padding+1] = file_name_len & 0xff;
@@ -853,28 +862,27 @@ class P2P
 			// calculate length of file-name + file-length variable
 			// the file name length is kept in a 2-byte variable, if overfills, it will send the parts of name that fits
 			uint8_t *packet;
-			uint8_t *iv;
 			char *data;
             std::string filename = std::filesystem::path(dat).filename().string();
 			const size_t file_name_length = filename.length();
 			const uint16_t file_name_len = file_name_length > UINT16_MAX ? UINT16_MAX : (uint16_t)file_name_length; // TODO: update limit
-			uint32_t data_start_index = 3U + (uint32_t)file_name_len; // this is the index where the file content start.
+			uint32_t data_start_index = 2U + (uint32_t)file_name_len; // this is the index where the file content start.
 			uint32_t data_len = data_start_index + length; // here, length is smaller or equal to 2^29 so this can be uint32_t
 
 			// find pad length
 			uint8_t mod = (data_len)%protocol.block_size;
-			uint8_t pad_size = protocol.block_size - mod;
-			if(mod == 0)
-				pad_size += protocol.block_size;
+			uint8_t pad_size = protocol.block_size - mod; // != 0, so can subtract 1 when padding
+		//	if(mod == 0)
+		//		pad_size += protocol.block_size;
 			data_start_index += pad_size;
             data_len += pad_size; // update plaintext length with pad size
 
 			// no segmentation needed
 			if(length <= NO_SEGMENTATION_SIZES::NSEG_FILE_SIZE) {
-				iv = protocol.generate_iv(); // get new iv
+				uint8_t *iv = protocol.generate_iv(); // get new iv
 				const uint32_t cipher_len = data_len<<div; // ciphertext length
-				data = new char[data_len]; // contains plaintext file name, data
 				const uint64_t packet_len = security_len + cipher_len;
+				data = new char[data_len]; // contains plaintext file name, data
 				packet = new uint8_t[packet_len]; // contains mac, iv, ciphertext filename and ciphertext data
 			
 				// send genesis packet
@@ -902,16 +910,13 @@ class P2P
 				// send data, tcp will break down the data
 				co_await send_awaitable(send_to, packet, packet_len);
 
+                delete[] iv;
 			} else { // data requires segmentation:
-				// const uint16_t cipher_len = (type + (protocol.block_size - type%protocol.block_size))<<div; // ciphertext length per packet
-				// const uint16_t packet_len = security_len + cipher_len;
-				// data = new char[type]; // plaintext data segment
-                const uint32_t cipher_len = NO_SEGMENTATION_SIZES::NSEG_FILE_SIZE-security_len;
-				constexpr uint32_t packet_len = NO_SEGMENTATION_SIZES::NSEG_FILE_SIZE;
+				uint32_t packet_len = NO_SEGMENTATION_SIZES::NSEG_FILE_SIZE;
+                uint32_t cipher_len = packet_len-security_len;
                 const uint32_t pt_segment_size = cipher_len>>div;
 				packet = new uint8_t[packet_len]; // contains mac, iv ciphertext file name and data
 				data = new char[pt_segment_size]; // plaintext data segment
-				iv = new uint8_t[protocol.iv_size];
 				CryptoPP::AutoSeededRandomPool rnd;
 
 				// send genesis packet
@@ -921,28 +926,31 @@ class P2P
 				prepare_file(data, filename, file_name_len, pad_size);
 
 				std::ifstream in(dat);
+                // TODO: handle first iteration out of loop to avoid data_start_index = 0 (will run every time) and in.read with subtract operation
+                uint64_t send_size = pt_segment_size; // set send size that will be modified on last block since last block might be smaller than pt_segment_size
 				while(in.good()) {
 					// read the segment of data from file
-					// in.read(&data[data_start_index], type-data_start_index);
-					in.read(&data[data_start_index], pt_segment_size-data_start_index);
+                    in.read(&data[data_start_index], pt_segment_size-data_start_index);
 				    size_t s_size=in.gcount();
-					rnd.GenerateBlock(iv, protocol.iv_size); // generate new iv
-
-					// pad
-					if(s_size%protocol.block_size != 0)
-						memset(&data[s_size], 0, pt_segment_size-s_size); // since allocated size is valid, then the data_size just needs padding of zeros appended
+                    rnd.GenerateBlock(&packet[protocol.mac_size], protocol.iv_size); // generate new iv
+                    
+                    // last block might have different size (smaller than pt_segment_size)
+                    if(s_size < pt_segment_size-data_start_index) { // last block
+                        send_size = s_size;
+                        cipher_len = send_size << div; // re-set cipher_len
+                        packet_len = cipher_len + security_len; // re-set packet_len
+                    }
 
 					// encrypt
 					uint8_t *u8data = reinterpret_cast<uint8_t*>(data);
-					cipher.assign_iv(iv);
-					cipher.encrypt(u8data, s_size, &packet[security_len], cipher_len);
+					cipher.assign_iv(&packet[protocol.mac_size]);
+					cipher.encrypt(u8data, send_size, &packet[security_len], cipher_len);
 
 					// generate MAC
 					verifier.generate(&packet[security_len], cipher_len, &u8data[u8data[0]], s_size-u8data[0]);
 
 					// copy mac and iv
 					memcpy(packet, verifier.get_mac(), protocol.mac_size);
-					memcpy(&packet[protocol.mac_size], iv, protocol.iv_size);
 
 					// send packet by packet
 					co_await send_awaitable(send_to, packet, packet_len);
@@ -952,7 +960,6 @@ class P2P
 			}
 			delete[] data;
 			delete[] packet;
-			delete[] iv;
             co_return 1;
 		}
 
