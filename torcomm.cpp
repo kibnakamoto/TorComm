@@ -46,6 +46,8 @@
  * make all socket management shared pointers for management of lifetime of sockets. - Done - Apr 12 2025
  * sender sends genesis while it's not received. Fix - Done Apr 14 2025
  * add coroutines to networking. Then it should all work. Develop unit tests for networking. - Done Apr 14
+ * make all parameters relating to length 64-bit as required by send_full function (cryptography) - Done Apr 14
+ * EFFICIENCY LOGIC ISSUE WITH PADDING: When input size is multiple of 16, then 1-byte padding is needed for pad-size so it needs to be 16-bytes. Not 32-bytes. So remove if(mod==0) pad_size+=16
  *
  */
 
@@ -54,14 +56,20 @@
  * TODO: Optimize the iv and other pointer allocations only once and take them as a function parameter for more efficiency.
  * TODO: define key exchanging for multi peer communication 
  * TODO: When sending the protocol no in P2P::send_two_party_ecdh(), make sure to encrypt the protocol number. the padding can be completely random values (15-bytes). The first byte will be the protocol number. This will make the protocol number private so no one will know it. use the default security protocol ALWAYS for this operation. Make sure to verify with HMAC
+ * TODO: for efficiency, remove data allocation for texts as a single static allocation can be done for multiple data since text should have a constexpr max size.
+ * TODO: maybe store ivs/mac in protocol. If faster than packet allocation.
+ * TODO: ProtocolData generate_iv method should be redesigned without allocation. Related to todo above.
  */
 
 /* NOT DONE:
- * TODO: make all parameters relating to length 64-bit as required by send_full function (cryptography)
+ * TODO: remove unnecesarry metadata from certain file types.
+ * TODO: remove extra allocations for packet creations. E.g. iv & mac. Store them in packet at all times
+ * TODO: 
  */
 
 /* MAJOR:
  * TODO: debug networking code - currently doing - Apr 14, 2025
+ * TODO: For networking, if file exists (before send_full)
  * TODO: for the AEAD algorithms, make sure that the previous ciphertext is used as an AD, this is to make sure that same data cannot be resent.
  */
 

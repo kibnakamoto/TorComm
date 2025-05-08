@@ -52,7 +52,7 @@ enum SIZE_LIMITS {
 // if sizes are less than these, no segmentation needed
 enum NO_SEGMENTATION_SIZES {
 	// NSEG_TEXT_SIZE   = 8192,        // 0x00000400  - 2^14: up to 8KB message    // TEXT SIZE UNNECESARRY
-	NSEG_FILE_SIZE   = 268435456,   // 0x10000000  - 2^29: up to 268MB file
+	NSEG_FILE_SIZE   = 268435456,   // 0x10000000  - 2^28: up to 268MB file
 };
 
 // type of Packet template T
@@ -748,7 +748,6 @@ class P2P
 				    file.close();
 
 					received_size+=pt_len;
-                    std::cout << std::dec << received_size << "\t";
 				}
 			}
 
@@ -867,7 +866,7 @@ class P2P
 			const size_t file_name_length = filename.length();
 			const uint16_t file_name_len = file_name_length > UINT16_MAX ? UINT16_MAX : (uint16_t)file_name_length; // TODO: update limit
 			uint32_t data_start_index = 2U + (uint32_t)file_name_len; // this is the index where the file content start.
-			uint32_t data_len = data_start_index + length; // here, length is smaller or equal to 2^29 so this can be uint32_t
+			uint32_t data_len = data_start_index + length; // here, length is smaller or equal to 2^28 so this can be uint32_t
 
 			// find pad length
 			uint8_t mod = (data_len)%protocol.block_size;
