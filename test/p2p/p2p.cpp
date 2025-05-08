@@ -220,16 +220,22 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
     uint8_t* key1; // correctly receive from 2
     uint8_t* key2; // correctly receive from 1
     uint16_t keysize;
-    bool msg_received; // correctly receive from 1
-    bool no_segment_file_received; // correctly receive from 2
-    bool segmented_file_received; // correctly receive from 2
 
-    std::thread t1([&peer1, peer2_port, connect_ip, &key1, &keysize, &no_segment_file_received, &segmented_file_received] {
+    // the next 3 atomic variables are only atomic to fix valgrind memory errors (uninitialized).
+    std::atomic<bool> msg_received; // correctly receive from 1
+    std::atomic<bool> no_segment_file_received; // correctly receive from 2
+    std::atomic<bool> segmented_file_received = false; // correctly receive from 2
+    std::atomic<bool> test_finished = false; // are all tests finished
+
+    std::thread t1([&peer1, peer2_port, connect_ip, &key1, &keysize,
+                    &no_segment_file_received, &segmented_file_received, &test_finished] {
 
         // connector and acceptor
         boost::asio::co_spawn(
             peer1.get_io_context(),
-            [&peer1, connect_ip, peer2_port, &key1, &keysize, &no_segment_file_received, &segmented_file_received]() -> boost::asio::awaitable<void> {
+            [&peer1, connect_ip, peer2_port, &key1, &keysize, &no_segment_file_received,
+             &segmented_file_received, &test_finished]() -> boost::asio::awaitable<void> {
+
                 // set cryptography
                 Cryptography::Curves curve = Cryptography::SECP256K1;
                 Cryptography::CommunicationProtocol comm_protocol = Cryptography::ECIES_HMAC_AES256_CBC_SHA512;
@@ -273,7 +279,7 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
                 // receive file from peer 1
                 std::string file_name;
                 DATA_FORMAT msg_format;
-                ERRORS error;
+                ERRORS error = NO_ERROR;
                 co_await peer1.recv_full(listener_socket, file_name, msg_format, protocol, decipher, verifier, error);
                 no_segment_file_received = files_equal(file_name, "files/example.txt"); // check if received correctly
 
@@ -299,6 +305,9 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
 
                 if(error != NO_ERROR)
                     std::cout << "\n[PEER 1] Error Received on recv_full - " << ERROR_STRING[error];
+
+                // all tests finished
+                test_finished.store(true, std::memory_order_release);
             },
             boost::asio::detached
         );
@@ -367,15 +376,15 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
                     std::cout << "\n[PEER 2] No sender found - socket=nullptr";
 
                 std::cout << "[PEER 2] sent file: " << long_file_name << std::endl;
-
             },
             boost::asio::detached
         );
         peer2.start_async();
     });
     
-    // sleep for 3 seconds for the connections to happen, adjust if needed 
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    // sleep for n seconds for tests to finish
+    while (!test_finished.load(std::memory_order_acquire))
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     
     // join threads
     t1.join();
