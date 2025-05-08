@@ -515,8 +515,8 @@ namespace Cryptography
 				    std::remove_reference_t<decltype(length)> original_length = length;
 					uint8_t mod = length % protocol.block_size;
 				    pad_size = protocol.block_size - mod;
-					if(mod == 0) // if 32-byte unpadded, then pad_size=0, if zero, than dat[length-1] = pad_size would modify the plaintext
-						pad_size += protocol.block_size;
+					//if(mod == 0) // if 32-byte unpadded, then pad_size=0, if zero, than dat[length-1] = pad_size would modify the plaintext
+					//	pad_size += protocol.block_size;
 				    length += pad_size;
 				    dat = new char[length];
 				    memcpy(&dat[pad_size], data, original_length); // for left to right padding
@@ -535,8 +535,8 @@ namespace Cryptography
 				    std::remove_reference_t<decltype(length)> original_length = length;
 					uint8_t mod = length % protocol.block_size;
 				    pad_size = protocol.block_size - mod;
-					if(mod == 0) // if 32-byte unpadded, then pad_size=0, if zero, than dat[length-1] = pad_size would modify the plaintext
-						pad_size += protocol.block_size;
+					//if(mod == 0) // if 32-byte unpadded, then pad_size=0, if zero, than dat[length-1] = pad_size would modify the plaintext
+					//	pad_size += protocol.block_size;
 				    length += pad_size;
 				    dat = new char[length];
 				    memcpy(&dat[pad_size], data.c_str(), original_length); // for left to right padding
