@@ -29,7 +29,6 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     Desktop gui(app);
-    Files files;
     gui.setWindowTitle("TorComm");
     gui.resize(1600/2, 900/2);
     gui.show();
