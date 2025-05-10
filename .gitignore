@@ -30,6 +30,7 @@ security/keys
 test/test
 test/p2p/p2p
 test/p2p/p2p.o
+test/p2p/files/large_file.txt
 
 # results of tests
 test/test.txt
