@@ -42,6 +42,8 @@
 #include <QPropertyAnimation>
 #include <QGraphicsOpacityEffect>
 #include <QLineEdit>
+#include <QTextLayout>
+#include <QTextLine>
 
 #include <iostream>
 #include <string>
@@ -52,7 +54,6 @@
 // TODO: Add Documentation while developing
 // TODO: Add color schemes and make sure that all graphics abide the given color schemes
 // TODO: Make a cipher suite selector
-
 
 class Desktop : public QWidget, public GUI
 {
@@ -541,11 +542,11 @@ class Desktop : public QWidget, public GUI
                     bool found = item->text().toLower().contains(input.toLower()); // find input, ignore case
                     item->setHidden(!found); // hide if not found
 
-                    // Allow selection of visible items only
+                    // allow selection of visible items only
                     if (!item->isHidden()) {
                         item->setFlags(item->flags() | Qt::ItemIsSelectable);  // Make sure item is selectable
                     } else {
-                        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);  // Disable selection for hidden items
+                        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);  // disable selection for hidden items
                     }
                 }
             }
@@ -578,61 +579,68 @@ class Desktop : public QWidget, public GUI
             {
                 QString text = textbox->toPlainText().trimmed(); // get text
 
-                // add zero width space every 30 characters
-                auto add_zero_width_spaces = [](std::string str) {
-                    std::string out;
-                    uint8_t count = 0; // how many iterations without space
-                    for(size_t i=0;i<str.length();i++) {
-                        out+=str[i];
-                        if (str[i] != ' ')
-                            count++;
-                        else {
-                            count = 0; // reset counter if space found
-                        }
-
-                        if(count > 30) {
-                            out += "\xE2\x80\x8B"; // zero-width space
-                            count = 0; // reset counter after adding
-                        }
-                    }
-                    return out;
-                };
-                text = add_zero_width_spaces(text.toStdString()).c_str();
-
                 if (!text.isEmpty()) {
-                    QLabel *label = new QLabel(text); // text
-                    label->setWordWrap(true);
-                    label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-                    label->setMaximumWidth(width()/2 - 25); // half of screen + 25px padding
-                    chat_history->addStretch(1); // places the text to the top of selected chat_history
-                    label->setStyleSheet(R"(
-                        background-color: #224466;
-                        border-radius: 10px;
-                        padding: 10px;
-                        margin: 5px;
-                    )");
-                    
-                    // resize to fix text
-                    label->adjustSize();
+                    // a workaround for text breaks for long/short words at proper place
+                    QTextEdit* box = new QTextEdit;
+                    box->setReadOnly(true);
+                    box->setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+                    box->setTextInteractionFlags(Qt::NoTextInteraction);
+                    box->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                    box->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                    box->setFrameStyle(QFrame::NoFrame);
 
+                    box->setStyleSheet(
+                        "QTextEdit {"
+                        " background-color: #224466;"
+                        " border-radius: 10px;"
+                        " padding: 5px;"
+                        " font-size: 14px;"
+                        " color: white;"
+                        "}"
+                    );
+
+                    QFont font = box->font();
+                    QFontMetrics fm(font);
+
+                    // measure line width for single text
+                    int fwidth; // final width
+                    int fheight; // final height
+
+                    // calculate max line width for setting size of text box
+                    QTextDocument* doc = new QTextDocument;
+                    doc->setDefaultFont(font);
+                    doc->setPlainText(text);
+                    int max_line_width = 0;
+                    QStringList lines = text.split('\n');
+                    for (const QString& line : lines) {
+                        int linew = fm.horizontalAdvance(line);
+                        if (linew > max_line_width)
+                            max_line_width = linew;
+                    }
+                    
+                    // add padding (calculated by brute-force)
+                    fwidth = max_line_width + 20;
+                    fwidth = qMin(fwidth, 300); // limit max width for long lines
+                    doc->setTextWidth(fwidth);
+                    fheight = static_cast<int>(doc->size().height()) + 15;
+
+                    box->setText(text);
+                    box->setFixedSize(fwidth, fheight);
+                    delete doc;
+
+                    chat_history->addStretch(1); // places the text to the top of selected chat_history
+                    
                     // stop resizing per message added, scroll if needed
                     QWidget *parent = chat_history->parentWidget();
                     if (parent) {
                         parent->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
                     }
-                    QHBoxLayout *wrapper = new QHBoxLayout;
-                    wrapper->addWidget(label);
-                    wrapper->addStretch();
-                    QWidget *wrapper_w = new QWidget;
-                    wrapper_w->setLayout(wrapper);
-
-                    // Insert above stretch (or just add if you're not using a bottom stretch)
-                    chat_history->addWidget(wrapper_w);
+                    chat_history->addWidget(box);
 
                     // Scroll to the bottom of the texts (as new texts are added)
                     QScrollArea *scrollarea = qobject_cast<QScrollArea*>(parent->parentWidget()->parentWidget());
                     if(scrollarea) {
-                        QScrollBar *scrollbar = scrollarea->verticalScrollBar();
+                      QScrollBar *scrollbar = scrollarea->verticalScrollBar();
                         if (scrollbar) {
                             // add a little delay so that it updates it right away
                             QTimer::singleShot(10, this, [scrollbar] {
