@@ -308,15 +308,15 @@ class Desktop : public QWidget, public GUI
                 layout->addLayout(hlayout);
 
                 // make size of contacts sidebar adjustable by mouse
-                QSplitter* splitter = new QSplitter(Qt::Horizontal, this);
+                QSplitter *splitter = new QSplitter(Qt::Horizontal, this);
                 splitter->addWidget(sidemenu);
                 splitter->addWidget(layout_widget);
-                splitter->setSizes({150, layout_widget->width()});
+                splitter->setSizes({170, layout_widget->width()});
                 main_layout->addWidget(splitter);
 
                 // connect the button and the message sender
                 connect(send_button, &QPushButton::clicked, this, &Desktop::send_text_message);
-                splitter->setSizes({150, width()-150});
+                splitter->setSizes({170, width()-170});
 
                 // set scrollbar timers
                 set_1s_timer_scrollbar();
@@ -537,9 +537,11 @@ class Desktop : public QWidget, public GUI
                 search_button->hide();
 
                 // set current width to 0
-                int actual_width = search_contacts->width();
                 search_contacts->setGeometry(search_contacts->x(), search_contacts->y(), 0, search_contacts->height());
                 search_contacts->setVisible(true);
+
+                // button's right-end x-coordinate - search bar's left-end x-coordinate = width of search bar
+                int actual_width = (search_button->x() + search_button->width())-search_contacts->x();
 
                 // animate showing the search bar
                 QPropertyAnimation *animation = new QPropertyAnimation(search_contacts, "geometry");
