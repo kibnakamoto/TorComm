@@ -44,9 +44,11 @@
 #include <QLineEdit>
 #include <QTextLayout>
 #include <QTextLine>
+#include <QPainter>
 
 #include <iostream>
 #include <string>
+#include <filesystem>
 
 #include "interface.h"
 #include "qnamespace.h"
@@ -92,6 +94,7 @@ class Desktop : public QWidget, public GUI
     QStackedWidget *chat_history_stack;
     QLineEdit *search_contacts; // search bar for contacts
     QPushButton *search_button; // search bar toggle button
+    QIcon file_button_icon; // file icon from symbols
 
     public:
             // default constructor
@@ -104,6 +107,7 @@ class Desktop : public QWidget, public GUI
 
                 // set default font size
                 GUI::font.setPointSize(15);  // TODO: make font/fontsize controlled in the settings
+                GUI::font_filename.setPointSize(15);
 
                 // set default theme
                 set_theme();
@@ -125,7 +129,6 @@ class Desktop : public QWidget, public GUI
                 // set icons
                 QIcon send_button_icon;
                 QIcon search_button_icon;
-                QIcon file_button_icon;
                 if(is_dark_theme) {
                     get_inverse_icon_symbol(send_button_icon, "../symbols/send_symbol.png");
                     get_inverse_icon_symbol(search_button_icon, "../symbols/search_symbol.png");
@@ -171,29 +174,19 @@ class Desktop : public QWidget, public GUI
 
                 // initialize textbox here since it's needed for added contacts (saving draft messages in chat_histories)
                 textbox = new QTextEdit(this);
+                textbox->setFont(GUI::font);
                 textbox->setFixedHeight(45); // same as send_button
                 textbox->setStyleSheet(styler_filename);
                 textbox->setPlaceholderText("Enter Text Message Here...");
-                textbox->setFont(GUI::font);
+
+                // first time text is entered, it resizes textbox, this is to stop it
+                QTimer::singleShot(0, this, [this]() {
+                    text_in_textbox();
+                    textbox->setFocus();
+                });
 
                 // Connect to textChanged signal to adjust the height dynamically
-                connect(textbox, &QTextEdit::textChanged, this, [this]() {
-                    int max_height = height()/3 - 50; // third of height + 50px for padding (dynamically calculated each time)
-
-                    // Calculate the height based on the content size
-                    int desired_height = textbox->document()->size().height() + 10;  // Adding some padding
-                    if (desired_height == 10)
-                        desired_height = 45; // set to same as send_button if textbox height is initially 10
-
-                    // Ensure that the height does not exceed the maximum height
-                    if (desired_height <= max_height) {
-                        textbox->setFixedHeight(desired_height);
-                        textbox->verticalScrollBar()->setVisible(false); // hide unless needed
-                    } else {
-                        textbox->setFixedHeight(max_height);
-                        textbox->verticalScrollBar()->setVisible(true); // hide unless needed
-                    }
-                });
+                connect(textbox, &QTextEdit::textChanged, this, &Desktop::text_in_textbox);
 
                 // same as chat history but different width
                 textbox->setStyleSheet(R"(
@@ -228,8 +221,6 @@ class Desktop : public QWidget, public GUI
                     QScrollBar::groove:vertical {
                         background: transparent;
                     }
-
-
                 )");
 
 
@@ -330,15 +321,34 @@ class Desktop : public QWidget, public GUI
                 // set scrollbar timers
                 set_1s_timer_scrollbar();
 
+                // if clicked enter, send message
+                textbox->installEventFilter(this);
+
                 // if textbox is focused on, then hide search contacts and show search button
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-                connect(app, &QApplication::focusChanged, [this](QWidget *old, QWidget *now) {
+                connect(app, &QApplication::focusChanged, [this](QWidget *, QWidget *now) {
                     if (now == textbox && search_contacts->isVisible()) {
                         hide_search_contacts();
                     }
                 });
-#pragma GCC diagnostic pop
+            }
+
+            void text_in_textbox()
+            {
+                int max_height = height()/3 - 50; // third of height + 50px for padding (dynamically calculated each time)
+
+                // calculate the height based on the content size
+                int desired_height = textbox->document()->size().height() + 10;  // 10px padding
+                if (desired_height == 10)
+                    desired_height = 45; // set to same as send_button if textbox height is initially 10
+
+                // Ensure that the height does not exceed the maximum height
+                if (desired_height <= max_height) {
+                    textbox->setFixedHeight(desired_height);
+                    textbox->verticalScrollBar()->setVisible(false); // hide unless needed
+                } else {
+                    textbox->setFixedHeight(max_height);
+                    textbox->verticalScrollBar()->setVisible(true); // hide unless needed
+                }
             }
 
             // attach file from file selector
@@ -354,6 +364,16 @@ class Desktop : public QWidget, public GUI
                 // add to chat_history once clicked sent: check if selected files is empty, if not add it then empty it after
                 // What should be the format of files attached in chat_history?
                 // TODO: implement
+                int nfiles = selected_files.size(); // number of selected files
+                if(nfiles == 1) { // if only 1
+                    QString filepath = selected_files.at(0);
+                    QString filename = QFileInfo(filepath).fileName();
+                    QIcon *file_icon = &file_button_icon;
+                    box_message(filename, GUI::font_filename, file_icon);
+                    //chat_history->();
+                } else {
+                    QVBoxLayout *files = new QVBoxLayout();
+                }
             }
 
             // get symbol based on theme
@@ -466,6 +486,14 @@ class Desktop : public QWidget, public GUI
                 } else if (watched == contacts_scroller && event->type() == QEvent::Enter) {
                     scroller_fade3->show_scrollbar_temp_f();
                     return true;
+                } else if (watched == textbox && event->type() == QEvent::KeyPress) {
+                     QKeyEvent *key_event = static_cast<QKeyEvent *>(event);
+                    if (key_event->key() == Qt::Key_Return || key_event->key() == Qt::Key_Enter) {
+                        if (!(key_event->modifiers() & Qt::ShiftModifier)) { // if shift is held, add new line
+                            send_text_message(); // if enter pressed, send text message
+                            return true;
+                        }
+                    }
                 }
 
                 return QWidget::eventFilter(watched, event);
@@ -574,84 +602,108 @@ class Desktop : public QWidget, public GUI
                 current_contact = contact; // set current contact
             }
 
+            void box_message(const QString &text, QFont font, QIcon *file_icon=nullptr)
+            {
+                // a workaround for text breaks for long/short words at proper place
+                QTextEdit* box = new QTextEdit;
+                box->setReadOnly(true);
+                box->setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+                box->setTextInteractionFlags(Qt::NoTextInteraction);
+                box->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                box->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                box->setFrameStyle(QFrame::NoFrame);
+                box->setAttribute(Qt::WA_OpaquePaintEvent); // might make it a little faster cuz it doesn't need to load background per message
+                box->setFont(font);
+                box->setStyleSheet(R"(
+                     background-color: #224466;
+                     border-radius: 10px;
+                     padding: 5px;
+                     color: white;
+                )");
+
+                QFontMetrics fm(font);
+
+                // measure line width for single text
+                int fwidth; // final width
+                int fheight; // final height
+
+                // calculate max line width for setting size of text box
+                QTextDocument* doc = new QTextDocument;
+                doc->setDefaultFont(font);
+                doc->setPlainText(text);
+                int max_line_width = 0;
+                QStringList lines = text.split('\n');
+                for (const QString& line : lines) {
+                    int linew = fm.horizontalAdvance(line);
+                    if (linew > max_line_width)
+                        max_line_width = linew;
+                }
+                
+                // add padding (calculated by brute-force)
+                fwidth = max_line_width + 20;
+                fwidth = qMin(fwidth, 300); // limit max width for long lines
+                doc->setTextWidth(fwidth);
+                fheight = static_cast<int>(doc->size().height()) + 15;
+
+                box->setText(text);
+                box->setFixedSize(fwidth, fheight);
+                delete doc;
+                
+                //chat_history->addStretch(1); // places the text to the top of selected chat_history
+
+                // stop resizing per message added, scroll if needed
+                QWidget *parent = chat_history->parentWidget();
+                if (parent) {
+                    parent->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+                }
+
+                // add file icon if file
+                if(!file_icon) { // if no file
+                    chat_history->addWidget(box);
+                } else { // file with file icon
+                    QWidget *wrapper = new QWidget(); // wrap file layout in qwidget then add to chat history
+                    QHBoxLayout *file_layout = new QHBoxLayout();
+                    file_layout->setSpacing(1);
+                    file_layout->setContentsMargins(0,0,0,0);
+                    QPixmap pixmap = file_icon->pixmap(30, 30); // create pixel map then add
+                    QLabel *icon_label = new QLabel();
+                    icon_label->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+                    icon_label->setPixmap(pixmap);
+                    file_layout->addWidget(icon_label);
+                    file_layout->addWidget(box);
+                    wrapper->setLayout(file_layout);
+                    wrapper->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+                    chat_history->addWidget(wrapper);
+                }
+                 
+
+                 // Scroll to the bottom of the texts (as new texts are added)
+                 QScrollArea *scrollarea = qobject_cast<QScrollArea*>(parent->parentWidget()->parentWidget());
+                 if(scrollarea) {
+                   QScrollBar *scrollbar = scrollarea->verticalScrollBar();
+                     if (scrollbar) {
+                         // add a little delay so that it updates it right away
+                         QTimer::singleShot(10, this, [scrollbar] {
+                             scrollbar->setValue(scrollbar->maximum()); // Scroll to the bottom
+                         });
+                         scrollbar->setValue(scrollbar->maximum());
+                     }
+                 }
+            }
+
             // only to send text messages
             void send_text_message()
             {
                 QString text = textbox->toPlainText().trimmed(); // get text
 
                 if (!text.isEmpty()) {
-                    // a workaround for text breaks for long/short words at proper place
-                    QTextEdit* box = new QTextEdit;
-                    box->setReadOnly(true);
-                    box->setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
-                    box->setTextInteractionFlags(Qt::NoTextInteraction);
-                    box->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-                    box->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-                    box->setFrameStyle(QFrame::NoFrame);
-
-                    box->setStyleSheet(
-                        "QTextEdit {"
-                        " background-color: #224466;"
-                        " border-radius: 10px;"
-                        " padding: 5px;"
-                        " font-size: 14px;"
-                        " color: white;"
-                        "}"
-                    );
-
-                    QFont font = box->font();
-                    QFontMetrics fm(font);
-
-                    // measure line width for single text
-                    int fwidth; // final width
-                    int fheight; // final height
-
-                    // calculate max line width for setting size of text box
-                    QTextDocument* doc = new QTextDocument;
-                    doc->setDefaultFont(font);
-                    doc->setPlainText(text);
-                    int max_line_width = 0;
-                    QStringList lines = text.split('\n');
-                    for (const QString& line : lines) {
-                        int linew = fm.horizontalAdvance(line);
-                        if (linew > max_line_width)
-                            max_line_width = linew;
-                    }
-                    
-                    // add padding (calculated by brute-force)
-                    fwidth = max_line_width + 20;
-                    fwidth = qMin(fwidth, 300); // limit max width for long lines
-                    doc->setTextWidth(fwidth);
-                    fheight = static_cast<int>(doc->size().height()) + 15;
-
-                    box->setText(text);
-                    box->setFixedSize(fwidth, fheight);
-                    delete doc;
-
-                    chat_history->addStretch(1); // places the text to the top of selected chat_history
-                    
-                    // stop resizing per message added, scroll if needed
-                    QWidget *parent = chat_history->parentWidget();
-                    if (parent) {
-                        parent->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-                    }
-                    chat_history->addWidget(box);
-
-                    // Scroll to the bottom of the texts (as new texts are added)
-                    QScrollArea *scrollarea = qobject_cast<QScrollArea*>(parent->parentWidget()->parentWidget());
-                    if(scrollarea) {
-                      QScrollBar *scrollbar = scrollarea->verticalScrollBar();
-                        if (scrollbar) {
-                            // add a little delay so that it updates it right away
-                            QTimer::singleShot(10, this, [scrollbar] {
-                                scrollbar->setValue(scrollbar->maximum()); // Scroll to the bottom
-                            });
-                            scrollbar->setValue(scrollbar->maximum());
-                        }
-                    }
+                    box_message(text, GUI::font); // put the message in a message box and scroll chat history to bottom
 
                     // clear text box
                     textbox->clear();
+
+                    // set textbox to focused so you can type a message without clicking on it
+                    textbox->setFocus();
                 }
             }
 

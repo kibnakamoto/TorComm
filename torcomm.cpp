@@ -68,6 +68,7 @@
  */
 
 /* MAJOR:
+ * TODO: make sure that once message is sent/received, before deallocation, delete plaintext data (for files, messages)
  * TODO: debug networking code - currently doing - Apr 14, 2025
  * TODO: For networking, if file exists (before send_full)
  * TODO: for the AEAD algorithms, make sure that the previous ciphertext is used as an AD, this is to make sure that same data cannot be resent.
