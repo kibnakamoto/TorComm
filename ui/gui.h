@@ -357,22 +357,26 @@ class Desktop : public QWidget, public GUI
                 // select file(s) from system file selector
                 // theme of file selector is controlled by the system
                 QStringList selected_files = QFileDialog::getOpenFileNames(this, "Select files", QString(),
-                                                                      "All Files (*.*)");
+                                                                           "All Files (*.*)");
                 
                 // attach the files above textbox
 
                 // add to chat_history once clicked sent: check if selected files is empty, if not add it then empty it after
                 // What should be the format of files attached in chat_history?
-                // TODO: implement
                 int nfiles = selected_files.size(); // number of selected files
                 if(nfiles == 1) { // if only 1
                     QString filepath = selected_files.at(0);
                     QString filename = QFileInfo(filepath).fileName();
                     QIcon *file_icon = &file_button_icon;
                     box_message(filename, GUI::font_filename, file_icon);
-                    //chat_history->();
                 } else {
-                    QVBoxLayout *files = new QVBoxLayout();
+                    // TODO: implement better, make it a QVBoxLayout of filenames.
+                    //QVBoxLayout *files = new QVBoxLayout();
+                    for(auto &filepath : selected_files) {
+                        QString filename = QFileInfo(filepath).fileName();
+                        QIcon *file_icon = &file_button_icon;
+                        box_message(filename, GUI::font_filename, file_icon);
+                    }
                 }
             }
 
@@ -596,6 +600,11 @@ class Desktop : public QWidget, public GUI
                 // set saved draft text for this contact
                 textbox->setText(historyndraft->draft.c_str());
                 textbox->setFocus();
+
+                // set position of mouse to end of textbox
+                QTextCursor cursor = textbox->textCursor();
+                cursor.movePosition(QTextCursor::End);
+                textbox->setTextCursor(cursor);
                 
                 // store this for later use when switching
                 chat_history_stack->setCurrentWidget(historyndraft->scroller);
@@ -614,6 +623,7 @@ class Desktop : public QWidget, public GUI
                 box->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
                 box->setFrameStyle(QFrame::NoFrame);
                 box->setAttribute(Qt::WA_OpaquePaintEvent); // might make it a little faster cuz it doesn't need to load background per message
+                box->setAttribute(Qt::WA_TransparentForMouseEvents);
                 box->setFont(font);
                 box->setStyleSheet(R"(
                      background-color: #224466;
