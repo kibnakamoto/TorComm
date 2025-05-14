@@ -595,6 +595,7 @@ class Desktop : public QWidget, public GUI
 
                 // set saved draft text for this contact
                 textbox->setText(historyndraft->draft.c_str());
+                textbox->setFocus();
                 
                 // store this for later use when switching
                 chat_history_stack->setCurrentWidget(historyndraft->scroller);
