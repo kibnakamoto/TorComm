@@ -337,8 +337,8 @@ class Desktop : public QWidget, public GUI
                 int max_height = height()/3 - 50; // third of height + 50px for padding (dynamically calculated each time)
 
                 // calculate the height based on the content size
-                int desired_height = textbox->document()->size().height() + 3;  // 3px padding
-                if (desired_height == 3)
+                int desired_height = textbox->document()->size().height() + 5;  // 3px padding
+                if (desired_height == 5)
                     desired_height = 45; // set to same as send_button if textbox height is initially 10
 
                 // Ensure that the height does not exceed the maximum height
