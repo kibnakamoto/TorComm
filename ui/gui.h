@@ -55,10 +55,14 @@
 #include "qnamespace.h"
 
 // TODO: Add Documentation while developing
-// TODO: Add color schemes and make sure that all graphics abide the given color schemes
-// TODO: Make a cipher suite selector
+// TODO: make settings page
+//      TODO: Add color schemes and make sure that all graphics abide the given color schemes
+//      TODO: Make a cipher suite selector
 //
 //
+// TODO: Add received messages box
+// TODO: ask user if they want to receive the file if the file is very large
+// TODO: if too many files, ask user if they want to receive that many files (after first non-genesis packet recieved, check number of files after read_files function call)
 // TODO: Maybe add password protected contacts. Specific ones.
 
 class Desktop : public QWidget, public GUI
@@ -113,6 +117,7 @@ class Desktop : public QWidget, public GUI
                 // set default font size
                 GUI::font.setPointSize(15);  // TODO: make font/fontsize controlled in the settings
                 GUI::font_filename.setPointSize(15);
+                GUI::font_title.setPointSize(11);
 
                 // set default theme
                 set_theme();
@@ -126,7 +131,7 @@ class Desktop : public QWidget, public GUI
             void start_interface()
             {
                 QHBoxLayout *main_layout = new QHBoxLayout(this); // uses side-menu (contacts) + layout
-                QWidget *layout_widget = new QWidget(this);
+                QWidget *layout_widget = new QWidget(this); // wrapper
                 QVBoxLayout *layout = new QVBoxLayout(layout_widget); // holds the chat history
                 chat_history_stack = new QStackedWidget(this);
                 layout->addWidget(chat_history_stack);
@@ -190,7 +195,7 @@ class Desktop : public QWidget, public GUI
                 // initialize textbox here since it's needed for added contacts (saving draft messages in chat_histories)
                 textbox = new QTextEdit(this);
                 textbox->setFont(GUI::font);
-                textbox->setFixedHeight(45); // same as send_button
+                textbox->setFixedHeight(45); // same as send_button, but it looks a little smaller
                 textbox->setStyleSheet(styler_filename);
                 textbox->setPlaceholderText("Enter Text Message Here...");
 
@@ -264,6 +269,9 @@ class Desktop : public QWidget, public GUI
                 sidemenu_layout->addWidget(contacts);
                 sidemenu->setLayout(sidemenu_layout);
 
+                // add margin so that last visible contact name before scrolling is fully shown with the given font
+                sidemenu_layout->setContentsMargins(0, 0, 0, 4);
+
                 // set style for contacts scrolling
                 contacts->setStyleSheet(R"(
                     QScrollBar:vertical {
@@ -322,6 +330,7 @@ class Desktop : public QWidget, public GUI
                 // add the text box + send button to the layout with chat history
                 layout->addLayout(hlayout);
 
+
                 // make size of contacts sidebar adjustable by mouse
                 QSplitter *splitter = new QSplitter(Qt::Horizontal, this);
                 splitter->addWidget(sidemenu);
@@ -347,12 +356,13 @@ class Desktop : public QWidget, public GUI
                 });
             }
 
+            // move height to max_height before scroller is enabled
             void text_in_textbox()
             {
                 int max_height = height()/3 - 50; // third of height + 50px for padding (dynamically calculated each time)
 
                 // calculate the height based on the content size
-                int desired_height = textbox->document()->size().height() + 5;  // 3px padding
+                int desired_height = textbox->document()->size().height() + 5;  // 5px padding
                 if (desired_height == 5)
                     desired_height = 45; // set to same as send_button if textbox height is initially 10
 
@@ -374,7 +384,7 @@ class Desktop : public QWidget, public GUI
                 QStringList selected_files = QFileDialog::getOpenFileNames(this, "Select files", QString(),
                                                                            "All Files (*.*)");
                 
-                // attach the files above textbox
+                textbox->setFocus(); // make sure user can type after selecting files without clicking textbox for setting focus.
 
                 // add to chat_history once clicked sent: check if selected files is empty, if not add it then empty it after
                 // What should be the format of files attached in chat_history?
@@ -576,8 +586,6 @@ class Desktop : public QWidget, public GUI
                         input_page->close(); // close current box
                     } else { // if name already exists
                         warning("Entered name already exists, please enter another name");
-                        //add_contact_clicked(); // recall function
-                        //input_page->close(); // close current box
                     }
                 });
 
@@ -733,7 +741,6 @@ class Desktop : public QWidget, public GUI
                 box->setFixedSize(fwidth, fheight);
                 delete doc;
                 
-                //chat_history->addStretch(1); // places the text to the top of selected chat_history
 
                 // stop resizing per message added, scroll if needed
                 QWidget *parent = chat_history->parentWidget();
@@ -845,4 +852,5 @@ class Desktop : public QWidget, public GUI
                 box.exec();
             }
 };
+
 #endif /* GUI_H */
