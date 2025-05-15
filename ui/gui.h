@@ -45,6 +45,7 @@
 #include <QTextLayout>
 #include <QTextLine>
 #include <QPainter>
+#include <QDialogButtonBox>
 
 #include <iostream>
 #include <string>
@@ -56,6 +57,9 @@
 // TODO: Add Documentation while developing
 // TODO: Add color schemes and make sure that all graphics abide the given color schemes
 // TODO: Make a cipher suite selector
+//
+//
+// TODO: Maybe add password protected contacts. Specific ones.
 
 class Desktop : public QWidget, public GUI
 {
@@ -94,6 +98,7 @@ class Desktop : public QWidget, public GUI
     QStackedWidget *chat_history_stack;
     QLineEdit *search_contacts; // search bar for contacts
     QPushButton *search_button; // search bar toggle button
+    QPushButton *new_contact_button; // add new contact button
     QIcon file_button_icon; // file icon from symbols
 
     public:
@@ -129,14 +134,17 @@ class Desktop : public QWidget, public GUI
                 // set icons
                 QIcon send_button_icon;
                 QIcon search_button_icon;
+                QIcon add_new_contact_icon;
                 if(is_dark_theme) {
                     get_inverse_icon_symbol(send_button_icon, "../symbols/send_symbol.png");
                     get_inverse_icon_symbol(search_button_icon, "../symbols/search_symbol.png");
                     get_inverse_icon_symbol(file_button_icon, "../symbols/file_symbol.png");
+                    get_inverse_icon_symbol(add_new_contact_icon, "../symbols/person.png");
                 } else {
                     get_icon_symbol(send_button_icon, "../symbols/send_symbol.png");
                     get_icon_symbol(search_button_icon, "../symbols/search_symbol.png");
                     get_icon_symbol(file_button_icon, "../symbols/file_symbol.png");
+                    get_icon_symbol(add_new_contact_icon, "../symbols/person.png");
                 }
 
                 // add contacts side bar menu
@@ -152,6 +160,14 @@ class Desktop : public QWidget, public GUI
                 label_contacts->setFont(GUI::font_title);
                 contacts_bar->addWidget(label_contacts);
 
+                // add add new contact button
+                new_contact_button = new QPushButton(this);
+                new_contact_button->setIcon(add_new_contact_icon);
+                new_contact_button->setIconSize(QSize(20,20));
+                new_contact_button->setFixedSize(30, 30);
+                contacts_bar->addWidget(new_contact_button);
+                connect(new_contact_button, &QPushButton::clicked, this, &Desktop::add_contact_clicked);
+
                 // add search bar for contacts
                 search_button = new QPushButton(this);
                 search_contacts = new QLineEdit(this);
@@ -163,10 +179,9 @@ class Desktop : public QWidget, public GUI
                 connect(search_button, &QPushButton::clicked, this, &Desktop::show_search_contacts);
                 search_button->setIcon(search_button_icon);
                 search_button->setIconSize(QSize(20, 20));
-                search_button->setFixedWidth(30);
 
                 // set fixed height for both button and search bar so that contacts list don't move when switching between them
-                search_button->setFixedHeight(30);
+                search_button->setFixedSize(30, 30);
                 search_contacts->setFixedHeight(30);
                 
                 // add contacts label + search bar to sidemenu (above contacts list)
@@ -530,11 +545,66 @@ class Desktop : public QWidget, public GUI
                 scroller->verticalScrollBar()->installEventFilter(this);
             }
 
+            QLineEdit *ip_input=nullptr;
     private slots:
+            // add new contacts using add new contact button
+            void add_contact_clicked()
+            {
+                QDialog *input_page = new QDialog();
+                input_page->setWindowTitle("New Contact");
+                
+                QLabel *contact_name_text = new QLabel("Name of Contact");
+                QLabel *ip_text = new QLabel("IP Address");
+
+                // get user inputs:
+                QDialogButtonBox *finalize = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+                if(!ip_input) { // only make it if it doesn't already exist
+                    ip_input = new QLineEdit(input_page);
+                }
+                QLineEdit *name_input = new QLineEdit(input_page);
+
+                // set fonts of text
+                ip_text->setFont(GUI::font);
+                contact_name_text->setFont(GUI::font);
+                name_input->setFont(GUI::font);
+                ip_input->setFont(GUI::font);
+
+                connect(finalize, &QDialogButtonBox::accepted, this, [this, name_input, input_page]() {
+                    QString inputted_name = name_input->text();
+                    if(contacts->findItems(inputted_name, Qt::MatchExactly).isEmpty()) { // if not found
+                        add_new_contact(inputted_name.toStdString());
+                        input_page->close(); // close current box
+                    } else { // if name already exists
+                        warning("Entered name already exists, please enter another name");
+                        //add_contact_clicked(); // recall function
+                        //input_page->close(); // close current box
+                    }
+                });
+
+                QVBoxLayout *layout = new QVBoxLayout(input_page);
+                QWidget *left_wrapper = new QWidget();
+                QWidget *right_wrapper = new QWidget();
+                QWidget *texts_inputs_wrapper = new QWidget();
+                QVBoxLayout *left_layout = new QVBoxLayout(left_wrapper); // put right layout containing inputs name and ip
+                QVBoxLayout *right_layout = new QVBoxLayout(right_wrapper); // put left layout containing texts name and ip
+                QHBoxLayout *texts_inputs = new QHBoxLayout(texts_inputs_wrapper); // put texts and inputs side by side
+                left_layout->addWidget(contact_name_text);
+                left_layout->addWidget(ip_text);
+                right_layout->addWidget(name_input);
+                right_layout->addWidget(ip_input);
+                texts_inputs->addWidget(left_wrapper);
+                texts_inputs->addWidget(right_wrapper);
+                layout->addWidget(texts_inputs_wrapper); // add everything to layout
+                layout->addWidget(finalize);
+
+                input_page->exec();
+            }
+
             // show search contacts when clicked on button
             void show_search_contacts()
             {
                 search_button->hide();
+                new_contact_button->hide();
 
                 // set current width to 0
                 search_contacts->setGeometry(search_contacts->x(), search_contacts->y(), 0, search_contacts->height());
@@ -565,6 +635,7 @@ class Desktop : public QWidget, public GUI
                 search_contacts->hide();
                 search_contacts->clear();
                 search_button->show();
+                new_contact_button->show();
                 contacts_filter(""); // reset contacts list (make it all visible)
             }
 
@@ -689,7 +760,6 @@ class Desktop : public QWidget, public GUI
                     chat_history->addWidget(wrapper);
                 }
                  
-
                  // Scroll to the bottom of the texts (as new texts are added)
                  QScrollArea *scrollarea = qobject_cast<QScrollArea*>(parent->parentWidget()->parentWidget());
                  if(scrollarea) {
