@@ -55,15 +55,16 @@
 #include "qnamespace.h"
 
 // TODO: Add Documentation while developing
-// TODO: make settings page
+// TODO: Make settings page
 //      TODO: Add color schemes and make sure that all graphics abide the given color schemes
 //      TODO: Make a cipher suite selector
 //
 //
+// TODO: for adding contacts, select new contact. After typing in a contact, move it to the first one.
 // TODO: Add received messages box
-// TODO: ask user if they want to receive the file if the file is very large
-// TODO: if too many files, ask user if they want to receive that many files (after first non-genesis packet recieved, check number of files after read_files function call)
-// TODO: Maybe add password protected contacts. Specific ones.
+// TODO: Ask user if they want to receive the file if the file is very large
+// TODO: If too many files, ask user if they want to receive that many files (after first non-genesis packet recieved, check number of files after read_files function call)
+// TODO: Maybe add password protected contacts. Specific ones. (Later on, after basic communication works)
 
 class Desktop : public QWidget, public GUI
 {
