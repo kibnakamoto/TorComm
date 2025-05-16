@@ -116,7 +116,7 @@ class Desktop : public QWidget, public GUI
                 is_dark_theme = true; // TODO: add to settings.json
 
                 // set default font size
-                GUI::font.setPointSize(15);  // TODO: make font/fontsize controlled in the settings
+                GUI::font.setPointSize(15); // TODO: control font size in settings
                 GUI::font_filename.setPointSize(15);
                 GUI::font_title.setPointSize(11);
 
@@ -140,7 +140,7 @@ class Desktop : public QWidget, public GUI
 
                 // add margin so that last visible contact name before scrolling is fully shown with the given font
                 //main_layout->setContentsMargins(0, 0, 0, 7);
-                this->layout()->setContentsMargins(5, 5, 5, 5);
+                this->layout()->setContentsMargins(5, 5, 5, 5); // font-size/3 for width needed so full contact name is visible before scrolling
 
                 // set icons
                 QIcon send_button_icon;
@@ -586,7 +586,13 @@ class Desktop : public QWidget, public GUI
                     QString inputted_name = name_input->text();
                     if(contacts->findItems(inputted_name, Qt::MatchExactly).isEmpty()) { // if not found
                         add_new_contact(inputted_name.toStdString());
+                        
+                        contacts->setCurrentRow(contacts->count()-1); // select last contact
+                        open_chat_of_contact(contacts->currentItem()); // select last contact
                         input_page->close(); // close current box
+                        
+                        // TODO: use IP, check if it's good, call connect function, add lambda function to handle if not valid ip
+                        std::string inputted_ip = ip_input->text().toStdString();
                     } else { // if name already exists
                         warning("Entered name already exists, please enter another name");
                     }
@@ -782,6 +788,18 @@ class Desktop : public QWidget, public GUI
                          scrollbar->setValue(scrollbar->maximum());
                      }
                  }
+
+                 // move currently talking to contact to top unless it's already there
+                 QListWidgetItem *current_item = contacts->currentItem();
+                if (contacts->row(current_item) != 0) { // TODO: once managed in sessions file. Make sure this rule is added to sessions file as well
+                    QListWidgetItem* curr_contact = contacts->takeItem(contacts->row(current_item));
+
+                    // Insert it at the top (index 0)
+                    contacts->insertItem(0, curr_contact);
+
+                    // Re-select it (optional)
+                    contacts->setCurrentItem(curr_contact);
+                }
             }
 
             // only to send text messages
