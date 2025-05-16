@@ -137,6 +137,11 @@ class Desktop : public QWidget, public GUI
                 chat_history_stack = new QStackedWidget(this);
                 layout->addWidget(chat_history_stack);
 
+
+                // add margin so that last visible contact name before scrolling is fully shown with the given font
+                //main_layout->setContentsMargins(0, 0, 0, 7);
+                this->layout()->setContentsMargins(5, 5, 5, 5);
+
                 // set icons
                 QIcon send_button_icon;
                 QIcon search_button_icon;
@@ -269,9 +274,6 @@ class Desktop : public QWidget, public GUI
                 contacts->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff); // default rule for scrollbar, more rules defined in timing function
                 sidemenu_layout->addWidget(contacts);
                 sidemenu->setLayout(sidemenu_layout);
-
-                // add margin so that last visible contact name before scrolling is fully shown with the given font
-                sidemenu_layout->setContentsMargins(0, 0, 0, 4);
 
                 // set style for contacts scrolling
                 contacts->setStyleSheet(R"(
