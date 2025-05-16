@@ -159,8 +159,8 @@ class P2P
 	std::vector<std::shared_ptr<boost::asio::ip::tcp::socket>> clients;
 	std::vector<std::shared_ptr<boost::asio::ip::tcp::socket>> servers;
 	boost::asio::ip::tcp::acceptor listener;
-	boost::asio::ip::tcp::resolver resolver;
-	boost::asio::ip::tcp::resolver::results_type endpoints;
+	//boost::asio::ip::tcp::resolver resolver;
+	//boost::asio::ip::tcp::resolver::results_type endpoints;
 	std::string ip; // get ip of this device
     // std::shared_ptr<Blocked> blocked;
     Blocked *blocked;
@@ -171,13 +171,13 @@ class P2P
 
 	P2P(uint16_t port, Blocked &blocked) : listener(boost::asio::ip::tcp::acceptor(io_context,
                                                                                   boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v6(),
-                                                                                                                 port))),
-										  resolver(io_context)
+                                                                                                                 port)))//,
+										  //resolver(io_context)
 	{
 		// this->blocked = std::make_shared<Blocked>(blocked);
 		this->blocked = &blocked;
 		ip = get_ipv6();
-		endpoints = resolver.resolve(ip, std::to_string(port)); // get endpoints
+		//endpoints = resolver.resolve(ip, std::to_string(port)); // get endpoints
 
 		// listen to oncoming connections
 		listener.listen();
@@ -267,21 +267,36 @@ class P2P
 	{
         const char *error_msg = nullptr;
         try {
-			auto endpoint_ = resolver.resolve(address, std::to_string(port_));
-			if(endpoint_.empty())
-			{
-				std::cout << "Failed to Resolve Endpoint For " << address << ":" << port_ << std::endl;
-				co_return nullptr;
-			}
+			//auto endpoint_ = resolver.resolve(address, std::to_string(port_));
+            auto ip_address = boost::asio::ip::make_address_v6(address); // TODO: resolver unnecessary
+			auto endpoint_ = boost::asio::ip::tcp::endpoint(ip_address, port_);
+			//if(endpoint_.empty())
+			//{
+			//	std::cout << "Failed to Resolve Endpoint For " << address << ":" << port_ << std::endl;
+			//	co_return nullptr;
+			//}
 			
 			// Attempt to connect
 			auto socket = std::make_shared<boost::asio::ip::tcp::socket>(io_context); // start socket
-			co_await async_connect(*socket.get(), endpoint_, boost::asio::use_awaitable);
+            co_await socket->async_connect(endpoint_, boost::asio::use_awaitable);
+			//co_await async_connect(*socket.get(), endpoint_, boost::asio::use_awaitable); // for resolver
 			servers.emplace_back(socket);
             co_return socket;
         } catch(boost::system::system_error &e) {
             error_msg = e.what();
+        } catch (const std::exception &e) { // if ip address is invalid
+            const char *what = e.what();
+            std::cout << "Invalid IP address: " << what << std::endl;
+            // TODO: add lambda function to execute when invalid IP address,
+
+		    if (log_network_issues) {
+		    	std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+		    	file << "\nerror in P2P::connect(): " << what << " - " << get_time();
+		    	file.close();
+		    }
+            co_return nullptr;
         }
+
         if(error_msg) {
 		    std::cout << "Failed Connection " << reattempt_after_fail << " (" << error_msg
 		    		  << "): Reconnecting in 3 Seconds..." << std::endl;
