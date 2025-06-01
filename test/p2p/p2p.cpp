@@ -225,7 +225,7 @@ bool advanced_test(std::string connect_ip, Blocked &blocked)
     std::atomic<bool> msg_received; // correctly receive from 1
     std::atomic<bool> no_segment_file_received; // correctly receive from 2
     std::atomic<bool> segmented_file_received = false; // correctly receive from 2
-    std::atomic<bool> test_finished = false; // are all tests finished
+    std::atomic<bool> test_finished; // are all tests finished
 
     std::thread t1([&peer1, peer2_port, connect_ip, &key1, &keysize,
                     &no_segment_file_received, &segmented_file_received, &test_finished] {
