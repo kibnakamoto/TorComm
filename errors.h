@@ -12,7 +12,7 @@
   *
   * Author: Taha
   * Date: 2023, Dec 9
-  * Description: For custom errors. Mainly for when the protocol picked doesn't exist.
+  * Description: For custom errors. Mainly for when the cryptographic protocol picked doesn't exist.
   */
 
 #ifndef ERRORS_H
