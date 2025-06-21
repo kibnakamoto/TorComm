@@ -37,5 +37,5 @@ p2p.o: p2p.cpp ../../comm.h ../../message.h ../../keys.h ../../settings.h
 
 .PHONY: clean
 clean:
-	rm -rf ${EXEC} *.o
+	rm -rf ${EXEC} p2p.o
 
