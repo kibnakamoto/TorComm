@@ -1,3 +1,4 @@
+#include <boost/asio/ip/address_v6.hpp>
 #include <iostream>
 #include <string>
 #include <cstring>
@@ -10,7 +11,7 @@
 
 // test if the three peers can communicate a simple message, simple test. If these pass, then move on to 
 // secure communication functions
-bool test_basic(std::string connect_ip, Blocked &blocked)
+bool test_basic(boost::asio::ip::address_v6 connect_ip, Blocked &blocked)
 {
     uint16_t peer1_port = 52024; // 3 ports since using localhost
     uint16_t peer2_port = 52025;
@@ -205,7 +206,7 @@ bool files_equal(std::string path1, std::string path2)
 }
 
 // advanced test for testing two-party full networking
-bool advanced_test(std::string connect_ip, Blocked &blocked)
+bool advanced_test(boost::asio::ip::address_v6 connect_ip, Blocked &blocked)
 {
     // set ports
     uint16_t peer1_port = 52024; // 2 ports since using localhost
@@ -418,14 +419,25 @@ int main()
 {
     Blocked blocked("../../security/keys", "../../blocked");
 
-    std::string connect_ip = "::1";
+    std::string connect_ip_addr = "::1";
+
+    // test if connecting to a valid ip address
+    boost::asio::ip::address_v6 connect_ip;
+    bool valid = valid_ip_selection(connect_ip, connect_ip_addr, "test_basic()");
+    if(!valid) { // if ip isn't in correct IPv6 format
+        std::cout << "\nFAILED invalid ip address to connect to";
+        std::cout << "\n-----------------------------------------------------\n";
+        std::cout << std::endl;
+        return 0;
+    }
+
     
     // test basic connections between 3 peers. Test if they can connect, send/recv
-    // bool basic_passed = test_basic(connect_ip, blocked);
-    // 
-    // // if basic tests failed, don't continue with tests
-    // if(!basic_passed)
-    //      return 1;
+    bool basic_passed = test_basic(connect_ip, blocked);
+     
+    // if basic tests failed, don't continue with tests
+    if(!basic_passed)
+        return 1;
     
     // test full networking functions if basic tests passed
     // ecdh, encryption, verification.

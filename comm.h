@@ -19,6 +19,7 @@
 #ifndef COMM_H
 #define COMM_H
 
+#include <boost/asio/ip/address_v6.hpp>
 #include <boost/system/system_error.hpp>
 #include <stdexcept>
 #include <stdint.h>
@@ -91,6 +92,27 @@ concept Boost_Buffer_Type = requires(T t)
 // then use Message class to 
 void get_info(uint8_t *dat, uint64_t &len, uint8_t &type);
 
+// Note that ip selection requires ipv6
+// ip_addr: not initialized
+// address: ip address to connect to
+// where: where is this function called (scope)
+inline bool valid_ip_selection(boost::asio::ip::address_v6 &ip_addr, std::string address, const char *where)
+{
+    try {
+        ip_addr = boost::asio::ip::address_v6(boost::asio::ip::make_address_v6(address));
+        return 1;
+    } catch(std::exception &e) {
+        const char *what = e.what();
+        std::cout << "Invalid IP address: " << what << std::endl;
+
+        if (log_network_issues) {
+        	std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+        	file << "\nerror in " << where << ": " << what << " - " << get_time();
+        	file.close();
+        }
+        return 0;
+    }
+}
 
 /* ECDH
  * When establishing a new secure public channel, only send ecdh data such as public key to the other person
@@ -263,12 +285,12 @@ class P2P
 	// port_: port to connect to
 	// reattempt_after_fail: how many times should it try to reconnect after failing
     boost::asio::awaitable<std::shared_ptr<boost::asio::ip::tcp::socket>>
-    connect(std::string address, uint16_t port_, uint32_t reattempt_after_fail=5)
+    connect(boost::asio::ip::address_v6 ip_address, uint16_t port_, uint32_t reattempt_after_fail=5)
 	{
         const char *error_msg = nullptr;
         try {
 			//auto endpoint_ = resolver.resolve(address, std::to_string(port_));
-            auto ip_address = boost::asio::ip::make_address_v6(address); // TODO: resolver unnecessary
+
 			auto endpoint_ = boost::asio::ip::tcp::endpoint(ip_address, port_);
 			//if(endpoint_.empty())
 			//{
@@ -284,18 +306,18 @@ class P2P
             co_return socket;
         } catch(boost::system::system_error &e) {
             error_msg = e.what();
-        } catch (const std::exception &e) { // if ip address is invalid
-            const char *what = e.what();
-            std::cout << "Invalid IP address: " << what << std::endl;
-            // TODO: add lambda function to execute when invalid IP address,
+        }// catch (const std::exception &e) { // if ip address is invalid
+         //   const char *what = e.what();
+         //   std::cout << "Invalid IP address: " << what << std::endl;
+         //   // TODO: add lambda function to execute when invalid IP address,
 
-		    if (log_network_issues) {
-		    	std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
-		    	file << "\nerror in P2P::connect(): " << what << " - " << get_time();
-		    	file.close();
-		    }
-            co_return nullptr;
-        }
+		 //   if (log_network_issues) {
+		 //   	std::fstream file(NETWORK_LOG_FILE, std::ios_base::app);
+		 //   	file << "\nerror in P2P::connect(): " << what << " - " << get_time();
+		 //   	file.close();
+		 //   }
+         //   co_return nullptr;
+        //}
 
         if(error_msg) {
 		    std::cout << "Failed Connection " << reattempt_after_fail << " (" << error_msg
@@ -306,7 +328,7 @@ class P2P
             boost::asio::steady_timer timer(executor, boost::asio::chrono::seconds(3));
 		    co_await timer.async_wait(boost::asio::use_awaitable);
 		    if (reattempt_after_fail > 1) { // call if reattempt wanted
-		    	co_return co_await connect(address, port_, reattempt_after_fail - 1);
+		    	co_return co_await connect(ip_address, port_, reattempt_after_fail - 1);
 		    } else {
 		     	std::cout << "Failed Connection: Too Many Attempts, Connection Failed" << std::endl;
 		     	servers.pop_back(); // remove last element because there is an error

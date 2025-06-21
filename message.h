@@ -51,7 +51,12 @@
 #include "errors.h"
 
 // get current time
-std::string get_time();
+inline std::string get_time()
+{
+    auto time = std::chrono::system_clock::now();
+    std::time_t end_time = std::chrono::system_clock::to_time_t(time);
+	return std::ctime(&end_time);
+}
 
 // convert bytes to hex
 inline std::string hex(uint8_t *arr, uint16_t len)
