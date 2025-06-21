@@ -46,15 +46,17 @@
 #include <QTextLine>
 #include <QPainter>
 #include <QDialogButtonBox>
+#include "qnamespace.h"
 
+#include <boost/asio/ip/address_v6_range.hpp>
 #include <iostream>
 #include <string>
 #include <filesystem>
 
 #include "interface.h"
-#include "qnamespace.h"
+#include "../comm.h"
+#include "../message.h"
 
-// TODO: Add Documentation while developing
 // TODO: Make settings page
 //      TODO: Add color schemes and make sure that all graphics abide the given color schemes
 //      TODO: Make a cipher suite selector
@@ -584,15 +586,27 @@ class Desktop : public QWidget, public GUI
 
                 connect(finalize, &QDialogButtonBox::accepted, this, [this, name_input, input_page]() {
                     QString inputted_name = name_input->text();
-                    if(contacts->findItems(inputted_name, Qt::MatchExactly).isEmpty()) { // if not found
-                        add_new_contact(inputted_name.toStdString());
-                        
-                        contacts->setCurrentRow(contacts->count()-1); // select last contact
-                        open_chat_of_contact(contacts->currentItem()); // select last contact
-                        input_page->close(); // close current box
-                        
-                        // TODO: use IP, check if it's good, call connect function, add lambda function to handle if not valid ip
+                    if (inputted_name == "" || inputted_name.contains(QChar('\t'))) {
+                        warning("Entered name isn\'t valid (can\'t be empty/tabs)");
+                    } else if(contacts->findItems(inputted_name, Qt::MatchExactly).isEmpty()) { // if not found
+                        // use IP, check if it's good, call connect function, add lambda function to handle if not valid ip
                         std::string inputted_ip = ip_input->text().toStdString();
+
+                        // check ip if it's valid or if it already exists
+                        boost::asio::ip::address_v6 ip;
+                        bool valid = valid_ip_selection(ip, inputted_ip, "Desktop::add_contact_clicked()");
+                        if(valid) { // if valid ip and name isn't already used
+                            add_new_contact(inputted_name.toStdString());
+                            
+                            contacts->setCurrentRow(contacts->count()-1); // select last contact
+                            open_chat_of_contact(contacts->currentItem()); // select last contact
+                            input_page->close(); // close current box
+                        
+                            // TODO: try to connect to ip
+                        } else { // invalid ip
+                            ip_input->setText("");
+                            warning("Invalid IP address used, only IPv6 addreses are supported");
+                        }
                     } else { // if name already exists
                         warning("Entered name already exists, please enter another name");
                     }
