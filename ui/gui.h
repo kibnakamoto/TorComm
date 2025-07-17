@@ -46,6 +46,7 @@
 #include <QTextLine>
 #include <QPainter>
 #include <QDialogButtonBox>
+#include <QDesktopServices>
 #include "qnamespace.h"
 
 #include <boost/asio/ip/address_v6_range.hpp>
@@ -528,8 +529,16 @@ class Desktop : public QWidget, public GUI
                             return true;
                         }
                     }
+                } else if (event->type() == QEvent::MouseButtonRelease) {
+                    QVariant property = qobject_cast<QWidget*>(watched)->property("f");
+                    if (property.isValid()) {
+                        QString path = property.toString();
+                        if (QFile::exists(path)) {
+                            // TODO: view file
+                            return true;
+                        }
+                    }
                 }
-
                 return QWidget::eventFilter(watched, event);
             }
 
@@ -610,6 +619,10 @@ class Desktop : public QWidget, public GUI
                     } else { // if name already exists
                         warning("Entered name already exists, please enter another name");
                     }
+                });
+
+                connect(finalize, &QDialogButtonBox::rejected, this, [input_page]() {
+                    input_page->close();
                 });
 
                 QVBoxLayout *layout = new QVBoxLayout(input_page);
@@ -761,6 +774,7 @@ class Desktop : public QWidget, public GUI
                 fheight = static_cast<int>(doc->size().height()) + 15;
 
                 box->setText(text);
+                box->setGeometry(box->x()+300, box->y(), box->width(), box->height());
                 box->setFixedSize(fwidth, fheight);
                 delete doc;
                 
@@ -788,6 +802,9 @@ class Desktop : public QWidget, public GUI
                     wrapper->setLayout(file_layout);
                     wrapper->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
                     chat_history->addWidget(wrapper);
+                    wrapper->installEventFilter(this);
+                    wrapper->setProperty("f", QVariant(text));
+                    wrapper->setCursor(Qt::PointingHandCursor);
                 }
                  
                  // Scroll to the bottom of the texts (as new texts are added)
