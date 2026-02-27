@@ -1,6 +1,7 @@
 # TorComm
 Secure P2P communication application using Crypto++ ECC and Tor
 
+![GUI](../symbols/"gui_image.png")
 
 packages: jsoncpp, cURL, Boost, Crypto++
 
