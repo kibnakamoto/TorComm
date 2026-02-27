@@ -729,6 +729,11 @@ class Desktop : public QWidget, public GUI
                 current_contact = contact; // set current contact
             }
 
+<<<<<<< torcomm
+=======
+<<<<<<< main
+=======
+>>>>>>> local
             void box_message(const QString &text, QFont font, QIcon *file_icon=nullptr)
             {
                 // a workaround for text breaks for long/short words at proper place
@@ -774,7 +779,10 @@ class Desktop : public QWidget, public GUI
                 fheight = static_cast<int>(doc->size().height()) + 15;
 
                 box->setText(text);
+<<<<<<< torcomm
                 box->setGeometry(box->x()+300, box->y(), box->width(), box->height());
+=======
+>>>>>>> local
                 box->setFixedSize(fwidth, fheight);
                 delete doc;
                 
@@ -787,7 +795,19 @@ class Desktop : public QWidget, public GUI
 
                 // add file icon if file
                 if(!file_icon) { // if no file
+<<<<<<< torcomm
                     chat_history->addWidget(box);
+=======
+                    QWidget *wrap_padded = new QWidget();
+                    QHBoxLayout *padded = new QHBoxLayout(wrap_padded);
+                    QSpacerItem *spacer = new QSpacerItem(220, 1, QSizePolicy::Expanding, QSizePolicy::Minimum); // TODO: replace 220 with a dynamic number
+                    padded->addItem(spacer);
+                    padded->addWidget(box); // Align the box to the right
+                    // TODO: JUST SIMPLY ALIGN TO RIGHT
+
+                    wrap_padded->setLayout(padded);
+                    chat_history->addWidget(wrap_padded);
+>>>>>>> local
                 } else { // file with file icon
                     QWidget *wrapper = new QWidget(); // wrap file layout in qwidget then add to chat history
                     QHBoxLayout *file_layout = new QHBoxLayout();
@@ -833,6 +853,10 @@ class Desktop : public QWidget, public GUI
                 }
             }
 
+<<<<<<< torcomm
+=======
+>>>>>>> local
+>>>>>>> local
             // only to send text messages
             void send_text_message()
             {
@@ -847,6 +871,13 @@ class Desktop : public QWidget, public GUI
                     // set textbox to focused so you can type a message without clicking on it
                     textbox->setFocus();
                 }
+            }
+
+            // recieve text messages
+            void recv_text_message(QString text)
+            {
+                box_message(text, GUI::font); // put the message in a message box and scroll chat history to bottom
+                
             }
 
     public:
