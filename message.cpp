@@ -869,11 +869,3 @@ uint8_t *Cryptography::Verifier::get_mac()
 {
 	return mac;
 }
-
-std::string get_time()
-{
-    auto time = std::chrono::system_clock::now();
-    std::time_t end_time = std::chrono::system_clock::to_time_t(time);
-	return std::ctime(&end_time);
-}
-

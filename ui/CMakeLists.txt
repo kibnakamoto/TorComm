@@ -17,5 +17,5 @@ add_executable(gui gui.cpp gui.h)
 # Link Qt5 libraries to the executable
 target_link_libraries(gui Qt5::Core Qt5::Gui Qt5::Widgets)
 
-set(CMAKE_CXX_FLAGS_DEBUG "-std=c++2b -Wall -pedantic -Wextra -O4 -g")
-set(CMAKE_CXX_FLAGS_RELEASE "-std=c++2b -Wall -pedantic -Wextra -O4")
+set(CMAKE_CXX_FLAGS_DEBUG   "-std=c++2b -Wall -pedantic -Wextra -O4 -fcoroutines -g")
+set(CMAKE_CXX_FLAGS_RELEASE "-std=c++2b -Wall -pedantic -Wextra -O4 -fcoroutines")

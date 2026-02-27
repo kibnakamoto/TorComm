@@ -42,17 +42,32 @@
 #include <QPropertyAnimation>
 #include <QGraphicsOpacityEffect>
 #include <QLineEdit>
-
-#include <iostream>
-#include <string>
-
-#include "interface.h"
+#include <QTextLayout>
+#include <QTextLine>
+#include <QPainter>
+#include <QDialogButtonBox>
+#include <QDesktopServices>
 #include "qnamespace.h"
 
-// TODO: Add Documentation while developing
-// TODO: Add color schemes and make sure that all graphics abide the given color schemes
-// TODO: Make a cipher suite selector
+#include <boost/asio/ip/address_v6_range.hpp>
+#include <iostream>
+#include <string>
+#include <filesystem>
 
+#include "interface.h"
+#include "../comm.h"
+#include "../message.h"
+
+// TODO: Make settings page
+//      TODO: Add color schemes and make sure that all graphics abide the given color schemes
+//      TODO: Make a cipher suite selector
+//
+//
+// TODO: for adding contacts, select new contact. After typing in a contact, move it to the first one.
+// TODO: Add received messages box
+// TODO: Ask user if they want to receive the file if the file is very large
+// TODO: If too many files, ask user if they want to receive that many files (after first non-genesis packet recieved, check number of files after read_files function call)
+// TODO: Maybe add password protected contacts. Specific ones. (Later on, after basic communication works)
 
 class Desktop : public QWidget, public GUI
 {
@@ -91,6 +106,8 @@ class Desktop : public QWidget, public GUI
     QStackedWidget *chat_history_stack;
     QLineEdit *search_contacts; // search bar for contacts
     QPushButton *search_button; // search bar toggle button
+    QPushButton *new_contact_button; // add new contact button
+    QIcon file_button_icon; // file icon from symbols
 
     public:
             // default constructor
@@ -102,7 +119,9 @@ class Desktop : public QWidget, public GUI
                 is_dark_theme = true; // TODO: add to settings.json
 
                 // set default font size
-                GUI::font.setPointSize(15);  // TODO: make font/fontsize controlled in the settings
+                GUI::font.setPointSize(15); // TODO: control font size in settings
+                GUI::font_filename.setPointSize(15);
+                GUI::font_title.setPointSize(11);
 
                 // set default theme
                 set_theme();
@@ -116,23 +135,30 @@ class Desktop : public QWidget, public GUI
             void start_interface()
             {
                 QHBoxLayout *main_layout = new QHBoxLayout(this); // uses side-menu (contacts) + layout
-                QWidget *layout_widget = new QWidget(this);
+                QWidget *layout_widget = new QWidget(this); // wrapper
                 QVBoxLayout *layout = new QVBoxLayout(layout_widget); // holds the chat history
                 chat_history_stack = new QStackedWidget(this);
                 layout->addWidget(chat_history_stack);
 
+
+                // add margin so that last visible contact name before scrolling is fully shown with the given font
+                //main_layout->setContentsMargins(0, 0, 0, 7);
+                this->layout()->setContentsMargins(5, 5, 5, 5); // font-size/3 for width needed so full contact name is visible before scrolling
+
                 // set icons
                 QIcon send_button_icon;
                 QIcon search_button_icon;
-                QIcon file_button_icon;
+                QIcon add_new_contact_icon;
                 if(is_dark_theme) {
                     get_inverse_icon_symbol(send_button_icon, "../symbols/send_symbol.png");
                     get_inverse_icon_symbol(search_button_icon, "../symbols/search_symbol.png");
                     get_inverse_icon_symbol(file_button_icon, "../symbols/file_symbol.png");
+                    get_inverse_icon_symbol(add_new_contact_icon, "../symbols/person.png");
                 } else {
                     get_icon_symbol(send_button_icon, "../symbols/send_symbol.png");
                     get_icon_symbol(search_button_icon, "../symbols/search_symbol.png");
                     get_icon_symbol(file_button_icon, "../symbols/file_symbol.png");
+                    get_icon_symbol(add_new_contact_icon, "../symbols/person.png");
                 }
 
                 // add contacts side bar menu
@@ -148,6 +174,14 @@ class Desktop : public QWidget, public GUI
                 label_contacts->setFont(GUI::font_title);
                 contacts_bar->addWidget(label_contacts);
 
+                // add add new contact button
+                new_contact_button = new QPushButton(this);
+                new_contact_button->setIcon(add_new_contact_icon);
+                new_contact_button->setIconSize(QSize(20,20));
+                new_contact_button->setFixedSize(30, 30);
+                contacts_bar->addWidget(new_contact_button);
+                connect(new_contact_button, &QPushButton::clicked, this, &Desktop::add_contact_clicked);
+
                 // add search bar for contacts
                 search_button = new QPushButton(this);
                 search_contacts = new QLineEdit(this);
@@ -159,10 +193,9 @@ class Desktop : public QWidget, public GUI
                 connect(search_button, &QPushButton::clicked, this, &Desktop::show_search_contacts);
                 search_button->setIcon(search_button_icon);
                 search_button->setIconSize(QSize(20, 20));
-                search_button->setFixedWidth(30);
 
                 // set fixed height for both button and search bar so that contacts list don't move when switching between them
-                search_button->setFixedHeight(30);
+                search_button->setFixedSize(30, 30);
                 search_contacts->setFixedHeight(30);
                 
                 // add contacts label + search bar to sidemenu (above contacts list)
@@ -170,29 +203,19 @@ class Desktop : public QWidget, public GUI
 
                 // initialize textbox here since it's needed for added contacts (saving draft messages in chat_histories)
                 textbox = new QTextEdit(this);
-                textbox->setFixedHeight(45); // same as send_button
+                textbox->setFont(GUI::font);
+                textbox->setFixedHeight(45); // same as send_button, but it looks a little smaller
                 textbox->setStyleSheet(styler_filename);
                 textbox->setPlaceholderText("Enter Text Message Here...");
-                textbox->setFont(GUI::font);
+
+                // first time text is entered, it resizes textbox, this is to stop it
+                QTimer::singleShot(0, this, [this]() {
+                    text_in_textbox();
+                    textbox->setFocus();
+                });
 
                 // Connect to textChanged signal to adjust the height dynamically
-                connect(textbox, &QTextEdit::textChanged, this, [this]() {
-                    int max_height = height()/3 - 50; // third of height + 50px for padding (dynamically calculated each time)
-
-                    // Calculate the height based on the content size
-                    int desired_height = textbox->document()->size().height() + 10;  // Adding some padding
-                    if (desired_height == 10)
-                        desired_height = 45; // set to same as send_button if textbox height is initially 10
-
-                    // Ensure that the height does not exceed the maximum height
-                    if (desired_height <= max_height) {
-                        textbox->setFixedHeight(desired_height);
-                        textbox->verticalScrollBar()->setVisible(false); // hide unless needed
-                    } else {
-                        textbox->setFixedHeight(max_height);
-                        textbox->verticalScrollBar()->setVisible(true); // hide unless needed
-                    }
-                });
+                connect(textbox, &QTextEdit::textChanged, this, &Desktop::text_in_textbox);
 
                 // same as chat history but different width
                 textbox->setStyleSheet(R"(
@@ -227,8 +250,6 @@ class Desktop : public QWidget, public GUI
                     QScrollBar::groove:vertical {
                         background: transparent;
                     }
-
-
                 )");
 
 
@@ -315,29 +336,50 @@ class Desktop : public QWidget, public GUI
                 // add the text box + send button to the layout with chat history
                 layout->addLayout(hlayout);
 
+
                 // make size of contacts sidebar adjustable by mouse
-                QSplitter* splitter = new QSplitter(Qt::Horizontal, this);
+                QSplitter *splitter = new QSplitter(Qt::Horizontal, this);
                 splitter->addWidget(sidemenu);
                 splitter->addWidget(layout_widget);
-                splitter->setSizes({150, layout_widget->width()});
+                splitter->setSizes({170, layout_widget->width()});
                 main_layout->addWidget(splitter);
 
                 // connect the button and the message sender
                 connect(send_button, &QPushButton::clicked, this, &Desktop::send_text_message);
-                splitter->setSizes({150, width()-150});
+                splitter->setSizes({170, width()-170});
 
                 // set scrollbar timers
                 set_1s_timer_scrollbar();
 
+                // if clicked enter, send message
+                textbox->installEventFilter(this);
+
                 // if textbox is focused on, then hide search contacts and show search button
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-                connect(app, &QApplication::focusChanged, [this](QWidget *old, QWidget *now) {
+                connect(app, &QApplication::focusChanged, [this](QWidget *, QWidget *now) {
                     if (now == textbox && search_contacts->isVisible()) {
                         hide_search_contacts();
                     }
                 });
-#pragma GCC diagnostic pop
+            }
+
+            // move height to max_height before scroller is enabled
+            void text_in_textbox()
+            {
+                int max_height = height()/3 - 50; // third of height + 50px for padding (dynamically calculated each time)
+
+                // calculate the height based on the content size
+                int desired_height = textbox->document()->size().height() + 5;  // 5px padding
+                if (desired_height == 5)
+                    desired_height = 45; // set to same as send_button if textbox height is initially 10
+
+                // Ensure that the height does not exceed the maximum height
+                if (desired_height <= max_height) {
+                    textbox->setFixedHeight(desired_height);
+                    textbox->verticalScrollBar()->setVisible(false); // hide unless needed
+                } else {
+                    textbox->setFixedHeight(max_height);
+                    textbox->verticalScrollBar()->setVisible(true); // hide unless needed
+                }
             }
 
             // attach file from file selector
@@ -346,13 +388,27 @@ class Desktop : public QWidget, public GUI
                 // select file(s) from system file selector
                 // theme of file selector is controlled by the system
                 QStringList selected_files = QFileDialog::getOpenFileNames(this, "Select files", QString(),
-                                                                      "All Files (*.*)");
+                                                                           "All Files (*.*)");
                 
-                // attach the files above textbox
+                textbox->setFocus(); // make sure user can type after selecting files without clicking textbox for setting focus.
 
                 // add to chat_history once clicked sent: check if selected files is empty, if not add it then empty it after
                 // What should be the format of files attached in chat_history?
-                // TODO: implement
+                int nfiles = selected_files.size(); // number of selected files
+                if(nfiles == 1) { // if only 1
+                    QString filepath = selected_files.at(0);
+                    QString filename = QFileInfo(filepath).fileName();
+                    QIcon *file_icon = &file_button_icon;
+                    box_message(filename, GUI::font_filename, file_icon);
+                } else {
+                    // TODO: implement better, make it a QVBoxLayout of filenames.
+                    //QVBoxLayout *files = new QVBoxLayout();
+                    for(auto &filepath : selected_files) {
+                        QString filename = QFileInfo(filepath).fileName();
+                        QIcon *file_icon = &file_button_icon;
+                        box_message(filename, GUI::font_filename, file_icon);
+                    }
+                }
             }
 
             // get symbol based on theme
@@ -465,8 +521,24 @@ class Desktop : public QWidget, public GUI
                 } else if (watched == contacts_scroller && event->type() == QEvent::Enter) {
                     scroller_fade3->show_scrollbar_temp_f();
                     return true;
+                } else if (watched == textbox && event->type() == QEvent::KeyPress) {
+                     QKeyEvent *key_event = static_cast<QKeyEvent *>(event);
+                    if (key_event->key() == Qt::Key_Return || key_event->key() == Qt::Key_Enter) {
+                        if (!(key_event->modifiers() & Qt::ShiftModifier)) { // if shift is held, add new line
+                            send_text_message(); // if enter pressed, send text message
+                            return true;
+                        }
+                    }
+                } else if (event->type() == QEvent::MouseButtonRelease) {
+                    QVariant property = qobject_cast<QWidget*>(watched)->property("f");
+                    if (property.isValid()) {
+                        QString path = property.toString();
+                        if (QFile::exists(path)) {
+                            // TODO: view file
+                            return true;
+                        }
+                    }
                 }
-
                 return QWidget::eventFilter(watched, event);
             }
 
@@ -497,16 +569,93 @@ class Desktop : public QWidget, public GUI
                 scroller->verticalScrollBar()->installEventFilter(this);
             }
 
+            QLineEdit *ip_input=nullptr;
     private slots:
+            // add new contacts using add new contact button
+            void add_contact_clicked()
+            {
+                QDialog *input_page = new QDialog();
+                input_page->setWindowTitle("New Contact");
+                
+                QLabel *contact_name_text = new QLabel("Name of Contact");
+                QLabel *ip_text = new QLabel("IP Address");
+
+                // get user inputs:
+                QDialogButtonBox *finalize = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+                if(!ip_input) { // only make it if it doesn't already exist
+                    ip_input = new QLineEdit(input_page);
+                }
+                QLineEdit *name_input = new QLineEdit(input_page);
+
+                // set fonts of text
+                ip_text->setFont(GUI::font);
+                contact_name_text->setFont(GUI::font);
+                name_input->setFont(GUI::font);
+                ip_input->setFont(GUI::font);
+
+                connect(finalize, &QDialogButtonBox::accepted, this, [this, name_input, input_page]() {
+                    QString inputted_name = name_input->text();
+                    if (inputted_name == "" || inputted_name.contains(QChar('\t'))) {
+                        warning("Entered name isn\'t valid (can\'t be empty/tabs)");
+                    } else if(contacts->findItems(inputted_name, Qt::MatchExactly).isEmpty()) { // if not found
+                        // use IP, check if it's good, call connect function, add lambda function to handle if not valid ip
+                        std::string inputted_ip = ip_input->text().toStdString();
+
+                        // check ip if it's valid or if it already exists
+                        boost::asio::ip::address_v6 ip;
+                        bool valid = valid_ip_selection(ip, inputted_ip, "Desktop::add_contact_clicked()");
+                        if(valid) { // if valid ip and name isn't already used
+                            add_new_contact(inputted_name.toStdString());
+                            
+                            contacts->setCurrentRow(contacts->count()-1); // select last contact
+                            open_chat_of_contact(contacts->currentItem()); // select last contact
+                            input_page->close(); // close current box
+                        
+                            // TODO: try to connect to ip
+                        } else { // invalid ip
+                            ip_input->setText("");
+                            warning("Invalid IP address used, only IPv6 addreses are supported");
+                        }
+                    } else { // if name already exists
+                        warning("Entered name already exists, please enter another name");
+                    }
+                });
+
+                connect(finalize, &QDialogButtonBox::rejected, this, [input_page]() {
+                    input_page->close();
+                });
+
+                QVBoxLayout *layout = new QVBoxLayout(input_page);
+                QWidget *left_wrapper = new QWidget();
+                QWidget *right_wrapper = new QWidget();
+                QWidget *texts_inputs_wrapper = new QWidget();
+                QVBoxLayout *left_layout = new QVBoxLayout(left_wrapper); // put right layout containing inputs name and ip
+                QVBoxLayout *right_layout = new QVBoxLayout(right_wrapper); // put left layout containing texts name and ip
+                QHBoxLayout *texts_inputs = new QHBoxLayout(texts_inputs_wrapper); // put texts and inputs side by side
+                left_layout->addWidget(contact_name_text);
+                left_layout->addWidget(ip_text);
+                right_layout->addWidget(name_input);
+                right_layout->addWidget(ip_input);
+                texts_inputs->addWidget(left_wrapper);
+                texts_inputs->addWidget(right_wrapper);
+                layout->addWidget(texts_inputs_wrapper); // add everything to layout
+                layout->addWidget(finalize);
+
+                input_page->exec();
+            }
+
             // show search contacts when clicked on button
             void show_search_contacts()
             {
                 search_button->hide();
+                new_contact_button->hide();
 
                 // set current width to 0
-                int actual_width = search_contacts->width();
                 search_contacts->setGeometry(search_contacts->x(), search_contacts->y(), 0, search_contacts->height());
                 search_contacts->setVisible(true);
+
+                // button's right-end x-coordinate - search bar's left-end x-coordinate = width of search bar
+                int actual_width = (search_button->x() + search_button->width())-search_contacts->x();
 
                 // animate showing the search bar
                 QPropertyAnimation *animation = new QPropertyAnimation(search_contacts, "geometry");
@@ -530,6 +679,7 @@ class Desktop : public QWidget, public GUI
                 search_contacts->hide();
                 search_contacts->clear();
                 search_button->show();
+                new_contact_button->show();
                 contacts_filter(""); // reset contacts list (make it all visible)
             }
 
@@ -541,11 +691,11 @@ class Desktop : public QWidget, public GUI
                     bool found = item->text().toLower().contains(input.toLower()); // find input, ignore case
                     item->setHidden(!found); // hide if not found
 
-                    // Allow selection of visible items only
+                    // allow selection of visible items only
                     if (!item->isHidden()) {
                         item->setFlags(item->flags() | Qt::ItemIsSelectable);  // Make sure item is selectable
                     } else {
-                        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);  // Disable selection for hidden items
+                        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);  // disable selection for hidden items
                     }
                 }
             }
@@ -566,6 +716,12 @@ class Desktop : public QWidget, public GUI
 
                 // set saved draft text for this contact
                 textbox->setText(historyndraft->draft.c_str());
+                textbox->setFocus();
+
+                // set position of mouse to end of textbox
+                QTextCursor cursor = textbox->textCursor();
+                cursor.movePosition(QTextCursor::End);
+                textbox->setTextCursor(cursor);
                 
                 // store this for later use when switching
                 chat_history_stack->setCurrentWidget(historyndraft->scroller);
@@ -573,78 +729,139 @@ class Desktop : public QWidget, public GUI
                 current_contact = contact; // set current contact
             }
 
+            void box_message(const QString &text, QFont font, QIcon *file_icon=nullptr)
+            {
+                // a workaround for text breaks for long/short words at proper place
+                QTextEdit* box = new QTextEdit;
+                box->setReadOnly(true);
+                box->setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+                box->setTextInteractionFlags(Qt::NoTextInteraction);
+                box->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                box->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                box->setFrameStyle(QFrame::NoFrame);
+                box->setAttribute(Qt::WA_OpaquePaintEvent); // might make it a little faster cuz it doesn't need to load background per message
+                box->setAttribute(Qt::WA_TransparentForMouseEvents);
+                box->setFont(font);
+                box->setStyleSheet(R"(
+                     background-color: #224466;
+                     border-radius: 10px;
+                     padding: 5px;
+                     color: white;
+                )");
+
+                QFontMetrics fm(font);
+
+                // measure line width for single text
+                int fwidth; // final width
+                int fheight; // final height
+
+                // calculate max line width for setting size of text box
+                QTextDocument* doc = new QTextDocument;
+                doc->setDefaultFont(font);
+                doc->setPlainText(text);
+                int max_line_width = 0;
+                QStringList lines = text.split('\n');
+                for (const QString& line : lines) {
+                    int linew = fm.horizontalAdvance(line);
+                    if (linew > max_line_width)
+                        max_line_width = linew;
+                }
+                
+                // add padding (calculated by brute-force)
+                fwidth = max_line_width + 20;
+                fwidth = qMin(fwidth, 300); // limit max width for long lines
+                doc->setTextWidth(fwidth);
+                fheight = static_cast<int>(doc->size().height()) + 15;
+
+                box->setText(text);
+                box->setGeometry(box->x()+300, box->y(), box->width(), box->height());
+                box->setFixedSize(fwidth, fheight);
+                delete doc;
+                
+                // stop resizing per message added, scroll if needed
+                QWidget *parent = chat_history->parentWidget();
+                if (parent) {
+                    parent->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+                }
+
+                // add file icon if file
+                if(!file_icon) { // if no file
+                    chat_history->addWidget(box);
+                    QWidget *wrap_padded = new QWidget();
+                    QHBoxLayout *padded = new QHBoxLayout(wrap_padded);
+                    QSpacerItem *spacer = new QSpacerItem(450, 1, QSizePolicy::Expanding, QSizePolicy::Minimum); // TODO: replace 220 with a dynamic number
+                    padded->addItem(spacer);
+                    padded->addWidget(box); // Align the box to the right
+                    // TODO: JUST SIMPLY ALIGN TO RIGHT
+
+                    wrap_padded->setLayout(padded);
+                    chat_history->addWidget(wrap_padded);
+                } else { // file with file icon
+                    QWidget *wrapper = new QWidget(); // wrap file layout in qwidget then add to chat history
+                    QHBoxLayout *file_layout = new QHBoxLayout();
+                    file_layout->setSpacing(1);
+                    file_layout->setContentsMargins(0,0,0,0);
+                    QPixmap pixmap = file_icon->pixmap(30, 30); // create pixel map then add
+                    QLabel *icon_label = new QLabel();
+                    icon_label->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+                    icon_label->setPixmap(pixmap);
+                    file_layout->addWidget(icon_label);
+                    file_layout->addWidget(box);
+                    wrapper->setLayout(file_layout);
+                    wrapper->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+                    chat_history->addWidget(wrapper);
+                    wrapper->installEventFilter(this);
+                    wrapper->setProperty("f", QVariant(text));
+                    wrapper->setCursor(Qt::PointingHandCursor);
+                }
+                 
+                 // Scroll to the bottom of the texts (as new texts are added)
+                 QScrollArea *scrollarea = qobject_cast<QScrollArea*>(parent->parentWidget()->parentWidget());
+                 if(scrollarea) {
+                   QScrollBar *scrollbar = scrollarea->verticalScrollBar();
+                     if (scrollbar) {
+                         // add a little delay so that it updates it right away
+                         QTimer::singleShot(10, this, [scrollbar] {
+                             scrollbar->setValue(scrollbar->maximum()); // Scroll to the bottom
+                         });
+                         scrollbar->setValue(scrollbar->maximum());
+                     }
+                 }
+
+                 // move currently talking to contact to top unless it's already there
+                 QListWidgetItem *current_item = contacts->currentItem();
+                if (contacts->row(current_item) != 0) { // TODO: once managed in sessions file. Make sure this rule is added to sessions file as well
+                    QListWidgetItem* curr_contact = contacts->takeItem(contacts->row(current_item));
+
+                    // Insert it at the top (index 0)
+                    contacts->insertItem(0, curr_contact);
+
+                    // Re-select it (optional)
+                    contacts->setCurrentItem(curr_contact);
+                }
+            }
+
             // only to send text messages
             void send_text_message()
             {
                 QString text = textbox->toPlainText().trimmed(); // get text
 
-                // add zero width space every 30 characters
-                auto add_zero_width_spaces = [](std::string str) {
-                    std::string out;
-                    uint8_t count = 0; // how many iterations without space
-                    for(size_t i=0;i<str.length();i++) {
-                        out+=str[i];
-                        if (str[i] != ' ')
-                            count++;
-                        else {
-                            count = 0; // reset counter if space found
-                        }
-
-                        if(count > 30) {
-                            out += "\xE2\x80\x8B"; // zero-width space
-                            count = 0; // reset counter after adding
-                        }
-                    }
-                    return out;
-                };
-                text = add_zero_width_spaces(text.toStdString()).c_str();
-
                 if (!text.isEmpty()) {
-                    QLabel *label = new QLabel(text); // text
-                    label->setWordWrap(true);
-                    label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-                    label->setMaximumWidth(width()/2 - 25); // half of screen + 25px padding
-                    chat_history->addStretch(1); // places the text to the top of selected chat_history
-                    label->setStyleSheet(R"(
-                        background-color: #224466;
-                        border-radius: 10px;
-                        padding: 10px;
-                        margin: 5px;
-                    )");
-                    
-                    // resize to fix text
-                    label->adjustSize();
-
-                    // stop resizing per message added, scroll if needed
-                    QWidget *parent = chat_history->parentWidget();
-                    if (parent) {
-                        parent->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-                    }
-                    QHBoxLayout *wrapper = new QHBoxLayout;
-                    wrapper->addWidget(label);
-                    wrapper->addStretch();
-                    QWidget *wrapper_w = new QWidget;
-                    wrapper_w->setLayout(wrapper);
-
-                    // Insert above stretch (or just add if you're not using a bottom stretch)
-                    chat_history->addWidget(wrapper_w);
-
-                    // Scroll to the bottom of the texts (as new texts are added)
-                    QScrollArea *scrollarea = qobject_cast<QScrollArea*>(parent->parentWidget()->parentWidget());
-                    if(scrollarea) {
-                        QScrollBar *scrollbar = scrollarea->verticalScrollBar();
-                        if (scrollbar) {
-                            // add a little delay so that it updates it right away
-                            QTimer::singleShot(10, this, [scrollbar] {
-                                scrollbar->setValue(scrollbar->maximum()); // Scroll to the bottom
-                            });
-                            scrollbar->setValue(scrollbar->maximum());
-                        }
-                    }
+                    box_message(text, GUI::font); // put the message in a message box and scroll chat history to bottom
 
                     // clear text box
                     textbox->clear();
+
+                    // set textbox to focused so you can type a message without clicking on it
+                    textbox->setFocus();
                 }
+            }
+
+            // recieve text messages
+            void recv_text_message(QString text)
+            {
+                box_message(text, GUI::font); // put the message in a message box and scroll chat history to bottom
+                
             }
 
     public:
@@ -702,4 +919,5 @@ class Desktop : public QWidget, public GUI
                 box.exec();
             }
 };
+
 #endif /* GUI_H */

@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     Desktop gui(app);
     gui.setWindowTitle("TorComm");
-    gui.resize(1600/2, 900/2);
+    gui.resize(1600/2, 900/2); // golden ratio
     gui.show();
     app.exec();
 	return 0;

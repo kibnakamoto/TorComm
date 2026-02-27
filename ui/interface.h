@@ -13,13 +13,17 @@ class GUI
 {
     protected:
             inline static bool is_dark_theme;
-            inline static QFont font;
+            inline static QFont font;          // font for text
+            inline static QFont font_filename; // font for filename
             inline static QFont font_title;
 
     public:
             GUI()
             {
                 font = QFont();
+                font_filename = QFont();
+                font_filename.setBold(true);
+                font_filename.setUnderline(true);
                 font_title = QFont();
                 font_title.setBold(true);
                 font_title.setFamily("Robotp");

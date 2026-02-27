@@ -53,29 +53,27 @@
 
 /* FUTURE TODOS: (Not for version 1.0)
  *
- * TODO: Optimize the iv and other pointer allocations only once and take them as a function parameter for more efficiency.
  * TODO: define key exchanging for multi peer communication 
  * TODO: When sending the protocol no in P2P::send_two_party_ecdh(), make sure to encrypt the protocol number. the padding can be completely random values (15-bytes). The first byte will be the protocol number. This will make the protocol number private so no one will know it. use the default security protocol ALWAYS for this operation. Make sure to verify with HMAC
  * TODO: for efficiency, remove data allocation for texts as a single static allocation can be done for multiple data since text should have a constexpr max size.
  * TODO: maybe store ivs/mac in protocol. If faster than packet allocation.
  * TODO: ProtocolData generate_iv method should be redesigned without allocation. Related to todo above.
+ * TODO: debug networking code for multi-peer communication
  */
 
 /* NOT DONE:
- * TODO: remove unnecesarry metadata from certain file types.
+ * TODO: remove unnecesary metadata from certain file types.
  * TODO: remove extra allocations for packet creations. E.g. iv & mac. Store them in packet at all times
- * TODO: 
  */
 
 /* MAJOR:
-<<<<<<< main
  * TODO: debug networking code - currently doing - Apr 14, 2025
+ * TODO: make sure that once message is sent/received, before deallocation, delete plaintext data (for files, messages)
  * TODO: For networking, if file exists (before send_full)
-=======
  * TODO: make sure that once message is sent/received, before deallocation, set plaintext data (for files, messages) to 0s
  * TODO: For networking, check if file exists (before send_full)
->>>>>>> local
  * TODO: for the AEAD algorithms, make sure that the previous ciphertext is used as an AD, this is to make sure that same data cannot be resent.
+ *       for non-AEAD algorithms, let bob generate the iv that alice will use. Or check if nonce used hasn't been used before with this key
  */
 
 int main()
